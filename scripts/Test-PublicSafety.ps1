@@ -147,10 +147,16 @@ function Test-ScannableFile {
         [string]$RelativePath,
 
         [Parameter(Mandatory)]
-        [bool]$AllowBinaries
+        [bool]$AllowBinaries,
+
+        [bool]$ScanContent = $true
     )
 
     Test-ScannablePath -RelativePath $RelativePath -AllowBinaries $AllowBinaries
+
+    if (-not $ScanContent) {
+        return
+    }
 
     $fileInfo = Get-Item -LiteralPath $FilePath
     if ($fileInfo.Length -gt $script:maximumScannableFileBytes) {
@@ -318,6 +324,19 @@ function Test-Provenance {
     ) {
         Add-Finding -Rule 'unpinned-package-source' -File $artifactName
     }
+
+    if ($metadata.contentOrigin -notin @('public-upstream', 'repository-build')) {
+        Add-Finding -Rule 'unknown-package-content-origin' -File $artifactName
+    }
+    elseif (
+        $metadata.contentOrigin -eq 'public-upstream' -and
+        $metadata.repository -ne 'https://github.com/openclaw/openclaw'
+    ) {
+        Add-Finding -Rule 'unapproved-upstream-content-origin' -File $artifactName
+    }
+    else {
+        $script:packageContentOrigin = $metadata.contentOrigin
+    }
 }
 
 function Test-Package {
@@ -406,7 +425,8 @@ function Test-Package {
                 Test-ScannableFile `
                     -FilePath $file.FullName `
                     -RelativePath $relativePath `
-                    -AllowBinaries $true
+                    -AllowBinaries $true `
+                    -ScanContent ($script:packageContentOrigin -ne 'public-upstream')
                 $script:scannedFileCount++
             }
         }
@@ -425,6 +445,7 @@ $findingKeys = [System.Collections.Generic.HashSet[string]]::new(
     [System.StringComparer]::Ordinal
 )
 $scannedFileCount = 0
+$packageContentOrigin = $null
 
 $rules = [System.Collections.Generic.List[object]]::new()
 $backslash = [char]92
