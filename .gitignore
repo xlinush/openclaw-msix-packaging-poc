@@ -3,3 +3,22 @@ node_modules/
 *.tgz
 *.tar.gz
 *.sha256
+
+# Local clean-room configuration can contain private paths and identifiers.
+.public-safety.local.json
+
+# Generated packaging, build, and signing outputs.
+bin/
+obj/
+out/
+packages/
+*.appx
+*.appxbundle
+*.appxsym
+*.cer
+*.key
+*.msix
+*.msixbundle
+*.p12
+*.pfx
+*.snk

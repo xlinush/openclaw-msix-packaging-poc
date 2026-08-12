@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "forbiddenLiterals": [
+    "REPLACE_WITH_AN_EXACT_PRIVATE_IDENTIFIER",
+    "REPLACE_WITH_AN_EXACT_PRIVATE_PATH"
+  ],
+  "forbiddenRegexes": [
+    {
+      "pattern": "REPLACE_WITH_AN_ESCAPED_PRIVATE_HOST_PATTERN"
+    }
+  ]
+}
