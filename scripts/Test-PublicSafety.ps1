@@ -169,12 +169,34 @@ function Test-ScannableFile {
         return
     }
 
-    $representations = @(
-        [System.Text.Encoding]::ASCII.GetString($bytes),
-        [System.Text.Encoding]::Unicode.GetString($bytes)
-    )
+    $sampleLength = [Math]::Min($bytes.Length, 8192)
+    $isBinary = [System.Array]::IndexOf(
+        $bytes,
+        [byte]0,
+        0,
+        $sampleLength
+    ) -ge 0
+    if ($isBinary) {
+        $representations = [System.Collections.Generic.List[string]]::new()
+        $latinText = [System.Text.Encoding]::Latin1.GetString($bytes)
+        foreach ($match in [regex]::Matches($latinText, '[ -~]{8,}')) {
+            $representations.Add($match.Value)
+        }
+
+        $unicodeText = [System.Text.Encoding]::Unicode.GetString($bytes)
+        foreach ($match in [regex]::Matches($unicodeText, '[ -~]{8,}')) {
+            $representations.Add($match.Value)
+        }
+    }
+    else {
+        $representations = @([System.Text.Encoding]::UTF8.GetString($bytes))
+    }
 
     foreach ($rule in $script:rules) {
+        if ($isBinary -and $rule.TextOnly) {
+            continue
+        }
+
         foreach ($content in $representations) {
             if ($content -match $rule.Pattern) {
                 $sensitivePath = $rule.Sensitive -and
@@ -337,6 +359,29 @@ function Test-Provenance {
     else {
         $script:packageContentOrigin = $metadata.contentOrigin
     }
+
+    $publicFilesProperty = $metadata.PSObject.Properties['publicFiles']
+    if ($publicFilesProperty) {
+        foreach ($publicFile in @($publicFilesProperty.Value)) {
+            $publicPath = ([string]$publicFile.path).Replace('\', '/')
+            if (
+                [string]::IsNullOrWhiteSpace($publicPath) -or
+                -not (Test-SafeArchivePath -ArchivePath $publicPath) -or
+                $publicFile.sha256 -notmatch '^[0-9a-fA-F]{64}$' -or
+                $publicFile.source -notmatch '^https://(?:github\.com|nodejs\.org)/'
+            ) {
+                Add-Finding -Rule 'invalid-public-package-file' -File $artifactName
+                continue
+            }
+
+            if (-not $script:packagePublicFiles.TryAdd(
+                $publicPath,
+                ([string]$publicFile.sha256).ToLowerInvariant()
+            )) {
+                Add-Finding -Rule 'duplicate-public-package-file' -File $artifactName
+            }
+        }
+    }
 }
 
 function Test-Package {
@@ -422,12 +467,38 @@ function Test-Package {
                     $temporaryDirectory,
                     $file.FullName
                 )
+                $archiveRelativePath = $relativePath.Replace('\', '/')
+                $scanContent = $script:packageContentOrigin -ne 'public-upstream'
+                $expectedPublicHash = $null
+                if ($script:packagePublicFiles.Remove(
+                    $archiveRelativePath,
+                    [ref]$expectedPublicHash
+                )) {
+                    $actualPublicHash = (
+                        Get-FileHash -LiteralPath $file.FullName -Algorithm SHA256
+                    ).Hash.ToLowerInvariant()
+                    if ($actualPublicHash -ne $expectedPublicHash) {
+                        Add-Finding `
+                            -Rule 'public-package-file-hash-mismatch' `
+                            -File $archiveRelativePath
+                    }
+                    else {
+                        $scanContent = $false
+                    }
+                }
+
                 Test-ScannableFile `
                     -FilePath $file.FullName `
                     -RelativePath $relativePath `
                     -AllowBinaries $true `
-                    -ScanContent ($script:packageContentOrigin -ne 'public-upstream')
+                    -ScanContent $scanContent
                 $script:scannedFileCount++
+            }
+
+            foreach ($missingPublicPath in $script:packagePublicFiles.Keys) {
+                Add-Finding `
+                    -Rule 'missing-public-package-file' `
+                    -File $missingPublicPath
             }
         }
     }
@@ -446,6 +517,9 @@ $findingKeys = [System.Collections.Generic.HashSet[string]]::new(
 )
 $scannedFileCount = 0
 $packageContentOrigin = $null
+$packagePublicFiles = [System.Collections.Generic.Dictionary[string, string]]::new(
+    [System.StringComparer]::OrdinalIgnoreCase
+)
 
 $rules = [System.Collections.Generic.List[object]]::new()
 $backslash = [char]92
@@ -458,6 +532,7 @@ $rules.Add([pscustomobject]@{
     Id = 'private-devops-url'
     Pattern = '(?i)https?://(?:dev\.azure\.com|[a-z0-9.-]+\.visualstudio\.com)(?:[/\\]|$)'
     Sensitive = $false
+    TextOnly = $false
 })
 $rules.Add([pscustomobject]@{
     Id = 'absolute-user-profile-path'
@@ -467,6 +542,7 @@ $rules.Add([pscustomobject]@{
         $macUsersPrefix + '[^/\r\n]+/)'
     )
     Sensitive = $false
+    TextOnly = $false
 })
 $rules.Add([pscustomobject]@{
     Id = 'unc-network-path'
@@ -476,21 +552,25 @@ $rules.Add([pscustomobject]@{
         [regex]::Escape("$backslash")
     )
     Sensitive = $false
+    TextOnly = $true
 })
 $rules.Add([pscustomobject]@{
     Id = 'private-key'
     Pattern = '-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----'
     Sensitive = $false
+    TextOnly = $false
 })
 $rules.Add([pscustomobject]@{
     Id = 'github-token'
     Pattern = '(?:gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,})'
     Sensitive = $false
+    TextOnly = $false
 })
 $rules.Add([pscustomobject]@{
     Id = 'connection-secret'
     Pattern = '(?i)(?:AccountKey|SharedAccessSignature)=[^;\s]{8,}'
     Sensitive = $false
+    TextOnly = $false
 })
 
 $localConfigurationPath = Join-Path $repositoryRoot '.public-safety.local.json'
@@ -516,6 +596,7 @@ if (Test-Path -LiteralPath $localConfigurationPath -PathType Leaf) {
                 Id = "local-literal-$localRuleIndex"
                 Pattern = [regex]::Escape([string]$literal)
                 Sensitive = $true
+                TextOnly = $false
             })
         }
     }
@@ -535,6 +616,7 @@ if (Test-Path -LiteralPath $localConfigurationPath -PathType Leaf) {
                 Id = "local-regex-$localRuleIndex"
                 Pattern = [string]$localRule.pattern
                 Sensitive = $true
+                TextOnly = $false
             })
         }
     }

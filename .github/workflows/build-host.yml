@@ -1,0 +1,140 @@
+name: Build C# host
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/build-host.yml
+      - Directory.Build.props
+      - global.json
+      - OpenClaw.MsixPackaging.sln
+      - src/**
+      - tests/**
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/build-host.yml
+      - Directory.Build.props
+      - global.json
+      - OpenClaw.MsixPackaging.sln
+      - src/**
+      - tests/**
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  public-safety:
+    name: Scan public repository
+    runs-on: windows-latest
+    steps:
+      - name: Check out repository and history
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Scan tracked repository
+        shell: pwsh
+        run: .\scripts\Test-PublicSafety.ps1 -Mode Repository
+
+      - name: Scan reachable Git history
+        shell: pwsh
+        run: .\scripts\Test-PublicSafety.ps1 -Mode History
+
+  test:
+    name: Test host
+    needs: public-safety
+    runs-on: windows-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: false
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5
+        with:
+          global-json-file: global.json
+          cache: true
+          cache-dependency-path: |
+            src/**/packages.lock.json
+            tests/**/packages.lock.json
+
+      - name: Restore locked dependencies
+        run: dotnet restore .\OpenClaw.MsixPackaging.sln --locked-mode
+
+      - name: Run tests
+        run: dotnet test .\OpenClaw.MsixPackaging.sln --configuration Release --no-restore
+
+  publish:
+    name: Publish ${{ matrix.runtime }}
+    needs: test
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        runtime:
+          - win-x64
+          - win-arm64
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: false
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5
+        with:
+          global-json-file: global.json
+          cache: true
+          cache-dependency-path: |
+            src/**/packages.lock.json
+            tests/**/packages.lock.json
+
+      - name: Publish host
+        shell: pwsh
+        run: |
+          dotnet restore .\src\OpenClaw.MsixHost\OpenClaw.MsixHost.csproj `
+            --locked-mode
+          dotnet publish .\src\OpenClaw.MsixHost\OpenClaw.MsixHost.csproj `
+            --configuration Release `
+            --runtime '${{ matrix.runtime }}' `
+            --self-contained false `
+            --output '${{ runner.temp }}\host' `
+            --no-restore `
+            -p:DebugType=None
+
+      - name: Create and inspect host archive
+        shell: pwsh
+        run: |
+          $archiveName = 'openclaw-poc-${{ matrix.runtime }}.zip'
+          $archivePath = Join-Path '${{ runner.temp }}' $archiveName
+          Compress-Archive `
+            -Path '${{ runner.temp }}\host\*' `
+            -DestinationPath $archivePath
+          $hash = (Get-FileHash $archivePath -Algorithm SHA256).Hash.ToLowerInvariant()
+          $metadataPath = Join-Path '${{ runner.temp }}' 'host-metadata.json'
+          [ordered]@{
+            repository = 'https://github.com/${{ github.repository }}'
+            resolvedCommit = '${{ github.sha }}'
+            architecture = '${{ matrix.runtime }}'
+            archive = $archiveName
+            sha256 = $hash
+            contentOrigin = 'repository-build'
+          } | ConvertTo-Json | Set-Content $metadataPath -Encoding utf8
+          .\scripts\Test-PublicSafety.ps1 `
+            -Mode Package `
+            -Path $archivePath `
+            -ProvenancePath $metadataPath
+
+      - name: Upload host
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: openclaw-poc-${{ matrix.runtime }}
+          path: |
+            ${{ runner.temp }}\openclaw-poc-${{ matrix.runtime }}.zip
+            ${{ runner.temp }}\host-metadata.json
+          if-no-files-found: error
+          retention-days: 7

@@ -1,6 +1,17 @@
-name: Build OpenClaw payloads
+name: Build OpenClaw payloads and MSIX
 
 on:
+  pull_request:
+    paths:
+      - .github/workflows/build-payloads.yml
+      - Directory.Build.props
+      - global.json
+      - OpenClaw.MsixPackaging.sln
+      - src/**
+      - tests/**
+      - scripts/Build-Payload.ps1
+      - scripts/Build-Msix.ps1
+      - scripts/Test-PublicSafety.ps1
   workflow_dispatch:
     inputs:
       openclaw_ref:
@@ -13,7 +24,14 @@ on:
       - main
     paths:
       - .github/workflows/build-payloads.yml
+      - Directory.Build.props
+      - global.json
+      - OpenClaw.MsixPackaging.sln
+      - src/**
+      - tests/**
       - scripts/Build-Payload.ps1
+      - scripts/Build-Msix.ps1
+      - scripts/Test-PublicSafety.ps1
 
 permissions:
   contents: read
@@ -165,5 +183,80 @@ jobs:
         with:
           name: openclaw-payload-${{ matrix.architecture }}
           path: ${{ runner.temp }}\openclaw-payload\
+          if-no-files-found: error
+          retention-days: 7
+
+  build-msix:
+    name: Build ${{ matrix.architecture }} MSIX
+    needs: build-payload
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        architecture:
+          - x64
+          - arm64
+    steps:
+      - name: Check out packaging repository
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: false
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5
+        with:
+          global-json-file: global.json
+          cache: true
+          cache-dependency-path: |
+            src/**/packages.lock.json
+            tests/**/packages.lock.json
+
+      - name: Download payload
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: openclaw-payload-${{ matrix.architecture }}
+          path: ${{ runner.temp }}\openclaw-payload
+
+      - name: Publish self-contained host
+        shell: pwsh
+        run: |
+          dotnet restore .\src\OpenClaw.MsixHost\OpenClaw.MsixHost.csproj `
+            --locked-mode
+          dotnet publish .\src\OpenClaw.MsixHost\OpenClaw.MsixHost.csproj `
+            --configuration Release `
+            --runtime 'win-${{ matrix.architecture }}' `
+            --self-contained true `
+            --output '${{ runner.temp }}\openclaw-host' `
+            --no-restore `
+            -p:DebugType=None
+
+      - name: Compose and sign development MSIX
+        shell: pwsh
+        run: |
+          .\scripts\Build-Msix.ps1 `
+            -HostPublishDirectory '${{ runner.temp }}\openclaw-host' `
+            -PayloadDirectory '${{ runner.temp }}\openclaw-payload' `
+            -Architecture '${{ matrix.architecture }}' `
+            -NodeVersion '${{ env.NODE_VERSION }}' `
+            -PackageVersion '0.1.${{ github.run_number }}.${{ github.run_attempt }}' `
+            -SourceCommit '${{ github.sha }}' `
+            -OutputDirectory '${{ runner.temp }}\openclaw-msix'
+
+      - name: Inspect signed MSIX
+        shell: pwsh
+        run: |
+          .\scripts\Test-PublicSafety.ps1 `
+            -Mode Package `
+            -Path '${{ runner.temp }}\openclaw-msix\openclaw-poc-${{ matrix.architecture }}.msix' `
+            -ProvenancePath '${{ runner.temp }}\openclaw-msix\msix-metadata.json'
+
+      - name: Upload MSIX
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: openclaw-poc-msix-${{ matrix.architecture }}
+          path: |
+            ${{ runner.temp }}\openclaw-msix\openclaw-poc-${{ matrix.architecture }}.msix
+            ${{ runner.temp }}\openclaw-msix\openclaw-poc-${{ matrix.architecture }}.cer
+            ${{ runner.temp }}\openclaw-msix\msix-metadata.json
           if-no-files-found: error
           retention-days: 7
