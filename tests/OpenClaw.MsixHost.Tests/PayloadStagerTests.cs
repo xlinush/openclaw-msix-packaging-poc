@@ -42,6 +42,34 @@ public sealed class PayloadStagerTests : IDisposable
     }
 
     [Fact]
+    public async Task StageAsyncExtractsAndReusesZeroLengthFile()
+    {
+        PackageFixture fixture = await CreatePackageAsync(
+        [
+            new PaxTarEntry(TarEntryType.RegularFile, "openclaw.mjs")
+            {
+                DataStream = TextStream("console.log('fixture');")
+            },
+            new PaxTarEntry(TarEntryType.RegularFile, "patches/.gitkeep")
+        ]);
+        var stager = new PayloadStager(Path.Combine(_testDirectory, "app"));
+
+        StagedPayload first = await stager.StageAsync(
+            fixture.ArchivePath,
+            fixture.MetadataPath,
+            CancellationToken.None);
+        StagedPayload second = await stager.StageAsync(
+            fixture.ArchivePath,
+            fixture.MetadataPath,
+            CancellationToken.None);
+
+        string emptyFile = Path.Combine(first.DirectoryPath, "patches", ".gitkeep");
+        Assert.Equal(first, second);
+        Assert.True(File.Exists(emptyFile));
+        Assert.Equal(0, new FileInfo(emptyFile).Length);
+    }
+
+    [Fact]
     public async Task StageAsyncReplacesPayloadAtTheSameInstallPath()
     {
         PackageFixture firstFixture = await CreatePackageAsync(

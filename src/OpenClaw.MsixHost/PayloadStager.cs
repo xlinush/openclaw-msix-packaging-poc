@@ -273,7 +273,7 @@ public sealed class PayloadStager(string installDirectory)
                         throw new InvalidDataException("Payload is too large after extraction.");
                     }
 
-                    if (entry.DataStream is null)
+                    if (entry.DataStream is null && entry.Length != 0)
                     {
                         throw new InvalidDataException(
                             $"Payload file has no data stream: {entry.Name}");
@@ -282,9 +282,11 @@ public sealed class PayloadStager(string installDirectory)
                     string hash;
                     if (destinationPath is null)
                     {
-                        byte[] contentHash = await SHA256.HashDataAsync(
-                            entry.DataStream,
-                            cancellationToken);
+                        byte[] contentHash = entry.DataStream is null
+                            ? SHA256.HashData(Array.Empty<byte>())
+                            : await SHA256.HashDataAsync(
+                                entry.DataStream,
+                                cancellationToken);
                         hash = Convert.ToHexString(contentHash).ToLowerInvariant();
                     }
                     else
@@ -301,7 +303,12 @@ public sealed class PayloadStager(string installDirectory)
                             FileAccess.Write,
                             FileShare.None))
                         {
-                            await entry.DataStream.CopyToAsync(output, cancellationToken);
+                            if (entry.DataStream is not null)
+                            {
+                                await entry.DataStream.CopyToAsync(
+                                    output,
+                                    cancellationToken);
+                            }
                         }
 
                         hash = await ComputeHashAsync(destinationPath, cancellationToken);
