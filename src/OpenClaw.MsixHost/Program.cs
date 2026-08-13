@@ -4,16 +4,103 @@ internal static class Program
 {
     public static async Task<int> Main(string[] args)
     {
+        HostDiagnosticLog? diagnostics = null;
+        bool diagnosticWarningWritten = false;
+        bool consoleWarningWritten = false;
+
+        void WriteConsoleError(string message)
+        {
+            try
+            {
+                Console.Error.WriteLine(message);
+            }
+            catch (Exception exception) when (
+                exception is IOException or ObjectDisposedException)
+            {
+                if (!consoleWarningWritten)
+                {
+                    consoleWarningWritten = true;
+                    WriteDiagnostic(
+                        $"Console error output failed: {exception.GetType().Name}.");
+                }
+            }
+        }
+
         try
         {
+            diagnostics = HostDiagnosticLog.Create();
+        }
+        catch (Exception exception) when (
+            exception is IOException or
+            UnauthorizedAccessException or
+            InvalidOperationException)
+        {
+            diagnosticWarningWritten = true;
+            WriteConsoleError(
+                $"openclaw-poc: Unable to create diagnostics: {exception.Message}");
+        }
+
+        void WriteDiagnostic(string message)
+        {
+            if (diagnostics is null)
+            {
+                return;
+            }
+
+            try
+            {
+                diagnostics.Write(message);
+            }
+            catch (Exception exception) when (
+                exception is IOException or
+                UnauthorizedAccessException or
+                ObjectDisposedException)
+            {
+                if (!diagnosticWarningWritten)
+                {
+                    diagnosticWarningWritten = true;
+                    WriteConsoleError(
+                        $"openclaw-poc: Unable to write diagnostics: {exception.Message}");
+                }
+            }
+        }
+
+        static string GetDiagnosticFailure(Exception exception) =>
+            exception switch
+            {
+                HostUsageException or
+                InvalidDataException or
+                TimeoutException or
+                PlatformNotSupportedException or
+                FileNotFoundException =>
+                    $"{exception.GetType().Name}: {exception.Message}",
+                _ => exception.GetType().Name
+            };
+
+        try
+        {
+            WriteDiagnostic("Host started.");
+            if (diagnostics is not null)
+            {
+                WriteConsoleError(
+                    $"openclaw-poc: Diagnostics: {diagnostics.Path}");
+            }
+
             HostOptions options = HostOptions.Parse(args);
             if (options.ShowHelp)
             {
+                WriteDiagnostic("Showing host help.");
                 HostOptions.WriteHelp(Console.Out);
                 return 0;
             }
 
-            var stager = new PayloadStager(options.InstallDirectory);
+            var stager = new PayloadStager(
+                options.InstallDirectory,
+                message =>
+                {
+                    WriteDiagnostic(message);
+                    WriteConsoleError($"openclaw-poc: {message}");
+                });
             StagedPayload payload = await stager.StageAsync(
                 options.PayloadPath,
                 options.MetadataPath,
@@ -23,19 +110,32 @@ internal static class Program
                 options.NodePath,
                 payload.DirectoryPath,
                 options.OpenClawArguments,
-                CancellationToken.None);
+                CancellationToken.None,
+                WriteDiagnostic);
         }
         catch (HostUsageException exception)
         {
-            Console.Error.WriteLine(exception.Message);
-            Console.Error.WriteLine();
+            WriteDiagnostic($"Usage error: {exception.Message}");
+            WriteConsoleError(exception.Message);
+            WriteConsoleError(string.Empty);
             HostOptions.WriteHelp(Console.Error);
             return 2;
         }
         catch (Exception exception)
         {
-            Console.Error.WriteLine($"openclaw-poc: {exception.Message}");
+            WriteDiagnostic($"Unhandled failure: {GetDiagnosticFailure(exception)}");
+            WriteConsoleError($"openclaw-poc: {exception.Message}");
+            if (diagnostics is not null)
+            {
+                WriteConsoleError(
+                    $"openclaw-poc: See diagnostics: {diagnostics.Path}");
+            }
             return 1;
+        }
+        finally
+        {
+            WriteDiagnostic("Host exiting.");
+            diagnostics?.Dispose();
         }
     }
 }

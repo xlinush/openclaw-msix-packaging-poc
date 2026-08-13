@@ -28,6 +28,28 @@ The host targets .NET 8 and has no runtime NuGet dependencies. It:
 7. launches `node openclaw.mjs` with inherited environment, working console,
    and exit code.
 
+Every host invocation appends timestamped lifecycle, staging, install-lock,
+child-process, and sanitized exception details to its printed diagnostics path.
+For the MSIX, the file is under:
+
+```text
+%LOCALAPPDATA%\Packages\<package-family>\LocalState\
+  OpenClawMsixPackagingPoc\Logs\openclaw-poc.log
+```
+
+The terminal also shows the current staging phase. The log does not record
+forwarded OpenClaw arguments, environment variables, or child-process output.
+The file can be copied while the host is running.
+
+To locate and copy an MSIX log without waiting for the host to exit:
+
+```powershell
+$log = Get-ChildItem `
+  "$env:LOCALAPPDATA\Packages\*\LocalState\OpenClawMsixPackagingPoc\Logs\openclaw-poc.log" |
+  Select-Object -First 1
+Copy-Item $log.FullName "$HOME\Desktop\openclaw-poc.log"
+```
+
 With no OpenClaw arguments, the host runs the Gateway in the foreground:
 
 ```powershell

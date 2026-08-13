@@ -7,7 +7,9 @@ using System.Text.Json;
 
 namespace OpenClaw.MsixHost;
 
-public sealed class PayloadStager(string installDirectory)
+public sealed class PayloadStager(
+    string installDirectory,
+    Action<string>? log = null)
 {
     private const int MaximumEntryCount = 250_000;
     private const long MaximumExtractedBytes = 8L * 1024 * 1024 * 1024;
@@ -15,6 +17,7 @@ public sealed class PayloadStager(string installDirectory)
     private static readonly TimeSpan InstallLockTimeout = TimeSpan.FromSeconds(30);
     private static readonly StringComparer PathComparer = StringComparer.OrdinalIgnoreCase;
     private readonly string _installDirectory = Path.GetFullPath(installDirectory);
+    private readonly Action<string> _log = log ?? (_ => { });
 
     public async Task<StagedPayload> StageAsync(
         string payloadPath,
@@ -28,6 +31,7 @@ public sealed class PayloadStager(string installDirectory)
             throw new FileNotFoundException("OpenClaw payload was not found.", fullPayloadPath);
         }
 
+        _log("Loading payload metadata.");
         PayloadMetadata metadata = await PayloadMetadata.LoadAsync(
             fullMetadataPath,
             cancellationToken);
@@ -52,6 +56,7 @@ public sealed class PayloadStager(string installDirectory)
             throw new InvalidDataException("Payload file name does not match its metadata.");
         }
 
+        _log("Verifying packaged payload SHA-256.");
         string actualHash = await ComputeHashAsync(fullPayloadPath, cancellationToken);
         if (!string.Equals(actualHash, metadata.Sha256, StringComparison.OrdinalIgnoreCase))
         {
@@ -71,10 +76,15 @@ public sealed class PayloadStager(string installDirectory)
         string backupDirectory = Path.Combine(installRoot, $".{installName}.previous");
         string lockPath = Path.Combine(installRoot, $".{installName}.install.lock");
 
+        _log("Waiting for the exclusive installation lock.");
+        var lockStopwatch = Stopwatch.StartNew();
         await using FileStream installLock = await AcquireInstallLockAsync(
             lockPath,
             cancellationToken);
+        _log(
+            $"Acquired the installation lock after {lockStopwatch.Elapsed.TotalSeconds:F1} seconds.");
 
+        _log("Checking for an interrupted payload update.");
         RecoverInterruptedPromotion(
             _installDirectory,
             temporaryDirectory,
@@ -84,19 +94,23 @@ public sealed class PayloadStager(string installDirectory)
         {
             try
             {
+                _log("Verifying the existing installed payload.");
                 await VerifyStagedPayloadAsync(
                     _installDirectory,
                     actualHash,
                     fullPayloadPath,
                     cancellationToken);
+                _log("The existing installed payload is valid and will be reused.");
                 return new StagedPayload(_installDirectory, actualHash);
             }
-            catch (InvalidDataException)
+            catch (InvalidDataException exception)
             {
-                // Rebuild the active directory from the verified payload.
+                _log(
+                    $"The existing installed payload requires repair: {exception.Message}");
             }
         }
 
+        _log("Extracting the verified payload. First launch can take several minutes.");
         Directory.CreateDirectory(temporaryDirectory);
         bool promoted = false;
         try
@@ -105,6 +119,7 @@ public sealed class PayloadStager(string installDirectory)
                 fullPayloadPath,
                 temporaryDirectory,
                 cancellationToken);
+            _log($"Extracted and hashed {entries.Count} payload files.");
             EnsureOpenClawEntryPoint(temporaryDirectory);
 
             var inventory = new PayloadInventory(actualHash, entries);
@@ -123,6 +138,7 @@ public sealed class PayloadStager(string installDirectory)
 
             try
             {
+                _log("Promoting the staged payload into the stable install directory.");
                 if (Directory.Exists(_installDirectory))
                 {
                     Directory.Move(_installDirectory, backupDirectory);
@@ -130,6 +146,7 @@ public sealed class PayloadStager(string installDirectory)
 
                 Directory.Move(temporaryDirectory, _installDirectory);
                 promoted = true;
+                _log("Payload installation completed.");
             }
             catch
             {

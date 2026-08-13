@@ -8,15 +8,22 @@ public static class GatewayLauncher
         string nodePath,
         string payloadDirectory,
         IReadOnlyList<string> openClawArguments,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        Action<string>? log = null)
     {
         ProcessStartInfo startInfo = CreateStartInfo(
             nodePath,
             payloadDirectory,
             openClawArguments);
+        log?.Invoke(
+            openClawArguments.Count == 0
+                ? "Launching OpenClaw Gateway in the foreground."
+                : "Launching OpenClaw with forwarded command arguments.");
         using Process process = Process.Start(startInfo) ??
             throw new InvalidOperationException("Unable to start the OpenClaw process.");
+        log?.Invoke($"OpenClaw child process started with PID {process.Id}.");
         await process.WaitForExitAsync(cancellationToken);
+        log?.Invoke($"OpenClaw child process exited with code {process.ExitCode}.");
         return process.ExitCode;
     }
 
