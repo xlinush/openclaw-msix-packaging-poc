@@ -14,6 +14,7 @@ public sealed class PayloadStagerTests : IDisposable
     [Fact]
     public async Task StageAsyncExtractsAndReusesVerifiedPayload()
     {
+        var messages = new List<string>();
         PackageFixture fixture = await CreatePackageAsync(
         [
             new PaxTarEntry(TarEntryType.RegularFile, "openclaw.mjs")
@@ -25,7 +26,9 @@ public sealed class PayloadStagerTests : IDisposable
                 DataStream = TextStream("export const value = 1;")
             }
         ]);
-        var stager = new PayloadStager(Path.Combine(_testDirectory, "app"));
+        var stager = new PayloadStager(
+            Path.Combine(_testDirectory, "app"),
+            messages.Add);
 
         StagedPayload first = await stager.StageAsync(
             fixture.ArchivePath,
@@ -39,6 +42,84 @@ public sealed class PayloadStagerTests : IDisposable
         Assert.Equal(first, second);
         Assert.True(File.Exists(Path.Combine(first.DirectoryPath, "openclaw.mjs")));
         Assert.True(File.Exists(Path.Combine(first.DirectoryPath, "dist", "app.js")));
+        Assert.Contains(
+            messages,
+            message => message.Contains(
+                "skipping full per-file verification",
+                StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task StageAsyncMigratesExistingInventoryWhenMarkerIsMissing()
+    {
+        var messages = new List<string>();
+        PackageFixture fixture = await CreatePackageAsync(
+        [
+            new PaxTarEntry(TarEntryType.RegularFile, "openclaw.mjs")
+            {
+                DataStream = TextStream("console.log('fixture');")
+            }
+        ]);
+        var stager = new PayloadStager(
+            Path.Combine(_testDirectory, "app"),
+            messages.Add);
+        StagedPayload staged = await stager.StageAsync(
+            fixture.ArchivePath,
+            fixture.MetadataPath,
+            CancellationToken.None);
+        File.Delete(Path.Combine(
+            staged.DirectoryPath,
+            ".payload-verified-sha256"));
+        messages.Clear();
+
+        StagedPayload verified = await stager.StageAsync(
+            fixture.ArchivePath,
+            fixture.MetadataPath,
+            CancellationToken.None);
+
+        Assert.Equal(staged, verified);
+        Assert.Contains(
+            "Migrated the existing payload inventory to the fast verification marker.",
+            messages);
+        Assert.True(File.Exists(Path.Combine(
+            staged.DirectoryPath,
+            ".payload-verified-sha256")));
+    }
+
+    [Fact]
+    public async Task StageAsyncRepairsNullInventoryHashWithoutMarker()
+    {
+        PackageFixture fixture = await CreatePackageAsync(
+        [
+            new PaxTarEntry(TarEntryType.RegularFile, "openclaw.mjs")
+            {
+                DataStream = TextStream("original")
+            }
+        ]);
+        var stager = new PayloadStager(Path.Combine(_testDirectory, "app"));
+        StagedPayload staged = await stager.StageAsync(
+            fixture.ArchivePath,
+            fixture.MetadataPath,
+            CancellationToken.None);
+        File.Delete(Path.Combine(
+            staged.DirectoryPath,
+            ".payload-verified-sha256"));
+        await File.WriteAllTextAsync(
+            Path.Combine(staged.DirectoryPath, ".payload-inventory.json"),
+            """{"PayloadSha256":null,"Files":[]}""",
+            CancellationToken.None);
+
+        StagedPayload repaired = await stager.StageAsync(
+            fixture.ArchivePath,
+            fixture.MetadataPath,
+            CancellationToken.None);
+
+        Assert.Equal(staged, repaired);
+        Assert.Equal(
+            "original",
+            await File.ReadAllTextAsync(
+                Path.Combine(repaired.DirectoryPath, "openclaw.mjs"),
+                CancellationToken.None));
     }
 
     [Fact]
@@ -330,7 +411,9 @@ public sealed class PayloadStagerTests : IDisposable
                 DataStream = TextStream("original")
             }
         ]);
-        var stager = new PayloadStager(Path.Combine(_testDirectory, "app"));
+        var stager = new PayloadStager(
+            Path.Combine(_testDirectory, "app"),
+            verifyInstalledPayload: true);
         StagedPayload staged = await stager.StageAsync(
             fixture.ArchivePath,
             fixture.MetadataPath,
@@ -363,7 +446,9 @@ public sealed class PayloadStagerTests : IDisposable
                 DataStream = TextStream("original")
             }
         ]);
-        var stager = new PayloadStager(Path.Combine(_testDirectory, "app"));
+        var stager = new PayloadStager(
+            Path.Combine(_testDirectory, "app"),
+            verifyInstalledPayload: true);
         StagedPayload staged = await stager.StageAsync(
             fixture.ArchivePath,
             fixture.MetadataPath,
@@ -410,7 +495,9 @@ public sealed class PayloadStagerTests : IDisposable
                 DataStream = TextStream("original")
             }
         ]);
-        var stager = new PayloadStager(Path.Combine(_testDirectory, "app"));
+        var stager = new PayloadStager(
+            Path.Combine(_testDirectory, "app"),
+            verifyInstalledPayload: true);
         StagedPayload staged = await stager.StageAsync(
             fixture.ArchivePath,
             fixture.MetadataPath,
@@ -446,7 +533,9 @@ public sealed class PayloadStagerTests : IDisposable
                 DataStream = TextStream("original")
             }
         ]);
-        var stager = new PayloadStager(Path.Combine(_testDirectory, "app"));
+        var stager = new PayloadStager(
+            Path.Combine(_testDirectory, "app"),
+            verifyInstalledPayload: true);
         StagedPayload staged = await stager.StageAsync(
             fixture.ArchivePath,
             fixture.MetadataPath,

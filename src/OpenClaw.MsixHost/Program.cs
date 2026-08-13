@@ -102,7 +102,8 @@ internal static class Program
 
             var stager = new PayloadStager(
                 options.InstallDirectory,
-                ReportProgress);
+                ReportProgress,
+                options.VerifyInstalledPayload);
             StagedPayload payload = await stager.StageAsync(
                 options.PayloadPath,
                 options.MetadataPath,

@@ -8,6 +8,7 @@ public sealed record HostOptions(
     string NodePath,
     string InstallDirectory,
     IReadOnlyList<string> OpenClawArguments,
+    bool VerifyInstalledPayload,
     bool ShowHelp)
 {
     public static HostOptions Parse(IReadOnlyList<string> arguments)
@@ -30,6 +31,7 @@ public sealed record HostOptions(
             ".openclaw-msix",
             "app");
         var openClawArguments = new List<string>();
+        bool verifyInstalledPayload = false;
         bool showHelp = false;
 
         for (int index = 0; index < arguments.Count; index++)
@@ -62,6 +64,9 @@ public sealed record HostOptions(
                 case "--host-install-directory":
                     installDirectory = ReadValue(arguments, ref index, argument);
                     break;
+                case "--host-verify-installed-payload":
+                    verifyInstalledPayload = true;
+                    break;
                 default:
                     openClawArguments.Add(argument);
                     break;
@@ -74,6 +79,7 @@ public sealed record HostOptions(
             nodePath,
             installDirectory,
             openClawArguments,
+            verifyInstalledPayload,
             showHelp);
     }
 
@@ -89,6 +95,8 @@ public sealed record HostOptions(
               --host-node <path>        node executable (packaged runtime or PATH)
               --host-install-directory <path>
                                         stable OpenClaw install directory
+              --host-verify-installed-payload
+                                        re-hash every installed payload file
               --host-help               show this help
 
             With no OpenClaw arguments, the host runs: gateway run

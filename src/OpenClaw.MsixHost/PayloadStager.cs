@@ -9,15 +9,18 @@ namespace OpenClaw.MsixHost;
 
 public sealed class PayloadStager(
     string installDirectory,
-    Action<string>? log = null)
+    Action<string>? log = null,
+    bool verifyInstalledPayload = false)
 {
     private const int MaximumEntryCount = 250_000;
     private const long MaximumExtractedBytes = 8L * 1024 * 1024 * 1024;
     private const string InventoryFileName = ".payload-inventory.json";
+    private const string VerificationMarkerFileName = ".payload-verified-sha256";
     private static readonly TimeSpan InstallLockTimeout = TimeSpan.FromSeconds(30);
     private static readonly StringComparer PathComparer = StringComparer.OrdinalIgnoreCase;
     private readonly string _installDirectory = Path.GetFullPath(installDirectory);
     private readonly Action<string> _log = log ?? (_ => { });
+    private readonly bool _verifyInstalledPayload = verifyInstalledPayload;
 
     public async Task<StagedPayload> StageAsync(
         string payloadPath,
@@ -92,21 +95,67 @@ public sealed class PayloadStager(
 
         if (Directory.Exists(_installDirectory))
         {
-            try
+            string? verifiedPayloadHash = await ReadVerificationMarkerAsync(
+                _installDirectory,
+                cancellationToken);
+            if (!_verifyInstalledPayload)
             {
-                _log("Verifying the existing installed payload.");
-                await VerifyStagedPayloadAsync(
-                    _installDirectory,
+                if (string.Equals(
+                    verifiedPayloadHash,
                     actualHash,
-                    fullPayloadPath,
-                    cancellationToken);
-                _log("The existing installed payload is valid and will be reused.");
-                return new StagedPayload(_installDirectory, actualHash);
-            }
-            catch (InvalidDataException exception)
-            {
+                    StringComparison.OrdinalIgnoreCase))
+                {
+                    _log(
+                        "The installed payload marker matches; skipping full per-file verification.");
+                    return new StagedPayload(_installDirectory, actualHash);
+                }
+
+                string? inventoryPayloadHash =
+                    await ReadInstalledInventoryPayloadHashAsync(
+                        _installDirectory,
+                        cancellationToken);
+                if (verifiedPayloadHash is null &&
+                    string.Equals(
+                        inventoryPayloadHash,
+                        actualHash,
+                        StringComparison.OrdinalIgnoreCase) &&
+                    File.Exists(Path.Combine(_installDirectory, "openclaw.mjs")))
+                {
+                    await WriteVerificationMarkerAsync(
+                        _installDirectory,
+                        actualHash,
+                        cancellationToken);
+                    _log(
+                        "Migrated the existing payload inventory to the fast verification marker.");
+                    return new StagedPayload(_installDirectory, actualHash);
+                }
+
                 _log(
-                    $"The existing installed payload requires repair: {exception.Message}");
+                    "The packaged payload or installed inventory changed; replacing the " +
+                    "installed payload without re-hashing the old version.");
+            }
+            else
+            {
+                _log("Full installed-payload verification was requested.");
+                try
+                {
+                    await VerifyStagedPayloadAsync(
+                        _installDirectory,
+                        actualHash,
+                        fullPayloadPath,
+                        cancellationToken);
+                    await WriteVerificationMarkerAsync(
+                        _installDirectory,
+                        actualHash,
+                        cancellationToken);
+                    _log("The existing installed payload is valid and will be reused.");
+                    return new StagedPayload(_installDirectory, actualHash);
+                }
+                catch (InvalidDataException exception)
+                {
+                    _log(
+                        $"The existing installed payload requires repair: {exception.Message}");
+                }
             }
         }
 
@@ -135,6 +184,10 @@ public sealed class PayloadStager(
                     inventory,
                     cancellationToken: cancellationToken);
             }
+            await WriteVerificationMarkerAsync(
+                temporaryDirectory,
+                actualHash,
+                cancellationToken);
 
             try
             {
@@ -414,6 +467,10 @@ public sealed class PayloadStager(
             {
                 continue;
             }
+            if (PathComparer.Equals(relativePath, VerificationMarkerFileName))
+            {
+                continue;
+            }
 
             if (!expectedFiles.Remove(relativePath))
             {
@@ -512,6 +569,77 @@ public sealed class PayloadStager(
         await using FileStream stream = File.OpenRead(path);
         byte[] hash = await SHA256.HashDataAsync(stream, cancellationToken);
         return Convert.ToHexString(hash).ToLowerInvariant();
+    }
+
+    private static async Task<string?> ReadVerificationMarkerAsync(
+        string installDirectory,
+        CancellationToken cancellationToken)
+    {
+        string markerPath = Path.Combine(
+            installDirectory,
+            VerificationMarkerFileName);
+        if (!File.Exists(markerPath) ||
+            !File.Exists(Path.Combine(installDirectory, InventoryFileName)) ||
+            !File.Exists(Path.Combine(installDirectory, "openclaw.mjs")))
+        {
+            return null;
+        }
+
+        string marker = await File.ReadAllTextAsync(
+            markerPath,
+            cancellationToken);
+        string value = marker.Trim();
+        return value.Length == 64 && value.All(Uri.IsHexDigit)
+            ? value
+            : null;
+    }
+
+    private static async Task<string?> ReadInstalledInventoryPayloadHashAsync(
+        string installDirectory,
+        CancellationToken cancellationToken)
+    {
+        string inventoryPath = Path.Combine(installDirectory, InventoryFileName);
+        if (!File.Exists(inventoryPath))
+        {
+            return null;
+        }
+
+        try
+        {
+            await using FileStream stream = File.OpenRead(inventoryPath);
+            PayloadInventory? inventory =
+                await JsonSerializer.DeserializeAsync<PayloadInventory>(
+                    stream,
+                    cancellationToken: cancellationToken);
+            return inventory is not null &&
+                inventory.Files is not null &&
+                inventory.Files.Count > 0 &&
+                !string.IsNullOrEmpty(inventory.PayloadSha256) &&
+                inventory.PayloadSha256.Length == 64 &&
+                inventory.PayloadSha256.All(Uri.IsHexDigit)
+                    ? inventory.PayloadSha256
+                    : null;
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
+
+    private static async Task WriteVerificationMarkerAsync(
+        string installDirectory,
+        string payloadHash,
+        CancellationToken cancellationToken)
+    {
+        string markerPath = Path.Combine(
+            installDirectory,
+            VerificationMarkerFileName);
+        string temporaryMarkerPath = markerPath + ".tmp";
+        await File.WriteAllTextAsync(
+            temporaryMarkerPath,
+            payloadHash,
+            cancellationToken);
+        File.Move(temporaryMarkerPath, markerPath, overwrite: true);
     }
 
     private static string ToArchivePath(string path) =>

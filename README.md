@@ -24,7 +24,8 @@ The host targets .NET 8 and has no runtime NuGet dependencies. It:
    against the packaged, SHA-verified tarball;
 5. replaces the stable `app` directory only after extraction succeeds, with
    rollback if promotion fails;
-6. re-verifies an existing version before every launch; and
+6. hashes every file during first-run extraction, then uses the packaged
+   payload SHA marker for fast subsequent launches; and
 7. launches `node openclaw.mjs` with inherited environment, working console,
    and exit code.
 
@@ -76,6 +77,10 @@ argument happens to start with `--host-`:
 ```powershell
 dotnet run --project .\src\OpenClaw.MsixHost -- status --json
 ```
+
+Use `--host-verify-installed-payload` to explicitly re-hash every installed
+payload file before running an OpenClaw command. Normal launches avoid this
+expensive scan after the installed payload has been verified once.
 
 The MSIX places the payload under `payload\` and the verified official Node.js
 runtime under `runtime\` beside the host. Outside an MSIX build, the host falls

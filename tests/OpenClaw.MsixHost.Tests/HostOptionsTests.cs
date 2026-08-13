@@ -14,9 +14,20 @@ public sealed class HostOptionsTests
 
         Assert.Equal("payload.tar.gz", options.PayloadPath);
         Assert.Equal("test-node.exe", options.NodePath);
+        Assert.False(options.VerifyInstalledPayload);
         Assert.Equal(
             ["gateway", "run", "--port", "12345"],
             options.OpenClawArguments);
+    }
+
+    [Fact]
+    public void ParseEnablesFullInstalledPayloadVerification()
+    {
+        HostOptions options = HostOptions.Parse(
+            ["--host-verify-installed-payload", "setup"]);
+
+        Assert.True(options.VerifyInstalledPayload);
+        Assert.Equal(["setup"], options.OpenClawArguments);
     }
 
     [Fact]
