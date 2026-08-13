@@ -77,6 +77,12 @@ internal static class Program
                 _ => exception.GetType().Name
             };
 
+        void ReportProgress(string message)
+        {
+            WriteDiagnostic(message);
+            WriteConsoleError($"openclaw-poc: {message}");
+        }
+
         try
         {
             WriteDiagnostic("Host started.");
@@ -96,22 +102,27 @@ internal static class Program
 
             var stager = new PayloadStager(
                 options.InstallDirectory,
-                message =>
-                {
-                    WriteDiagnostic(message);
-                    WriteConsoleError($"openclaw-poc: {message}");
-                });
+                ReportProgress);
             StagedPayload payload = await stager.StageAsync(
                 options.PayloadPath,
                 options.MetadataPath,
                 CancellationToken.None);
 
-            return await GatewayLauncher.RunAsync(
+            int exitCode = await GatewayLauncher.RunAsync(
                 options.NodePath,
                 payload.DirectoryPath,
                 options.OpenClawArguments,
                 CancellationToken.None,
-                WriteDiagnostic);
+                ReportProgress);
+            if (exitCode == 78)
+            {
+                ReportProgress(
+                    "OpenClaw reported a configuration error (exit code 78). " +
+                    "For first-run setup, run `openclaw-poc setup` or " +
+                    "`openclaw-poc onboard --mode local`, then retry.");
+            }
+
+            return exitCode;
         }
         catch (HostUsageException exception)
         {

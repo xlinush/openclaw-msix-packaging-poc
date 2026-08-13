@@ -41,6 +41,10 @@ The terminal also shows the current staging phase. The log does not record
 forwarded OpenClaw arguments, environment variables, or child-process output.
 The file can be copied while the host is running.
 
+If OpenClaw exits with configuration code `78`, the host prints and records
+first-run guidance. Complete setup with `openclaw-poc setup` or
+`openclaw-poc onboard --mode local`, then launch `openclaw-poc` again.
+
 To locate and copy an MSIX log without waiting for the host to exit:
 
 ```powershell
