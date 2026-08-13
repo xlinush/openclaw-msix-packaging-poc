@@ -123,3 +123,16 @@ dotnet publish .\src\OpenClaw.MsixHost\OpenClaw.MsixHost.csproj `
 published host and payload directory, downloads Node.js from the official
 distribution, verifies `SHASUMS256.txt`, creates the package with MakeAppx,
 and applies an ephemeral development signature with SignTool.
+
+For a pre-push package using the current local source, including uncommitted
+changes, run:
+
+```powershell
+.\scripts\Build-LocalMsix.ps1 -Architecture x64
+```
+
+The wrapper downloads the latest successful public payload from GitHub
+Actions, publishes the current host source, creates and signs the MSIX, and
+runs the package safety scanner. Output is written below
+`artifacts\local-msix\`. Use `-PayloadDirectory` to build without downloading
+an artifact, or `-PayloadRunId` to select a specific successful workflow.

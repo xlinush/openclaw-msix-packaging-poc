@@ -20,6 +20,8 @@ param(
     [ValidatePattern('^[0-9a-fA-F]{40}$')]
     [string]$SourceCommit,
 
+    [switch]$SourceTreeDirty,
+
     [Parameter(Mandatory)]
     [string]$OutputDirectory
 )
@@ -384,6 +386,7 @@ try {
     [ordered]@{
         repository = 'https://github.com/xlinush/openclaw-msix-packaging-poc'
         resolvedCommit = $SourceCommit.ToLowerInvariant()
+        sourceTreeDirty = $SourceTreeDirty.IsPresent
         architecture = $Architecture
         archive = $msixName
         sha256 = $msixHash
