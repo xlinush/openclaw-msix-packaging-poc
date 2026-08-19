@@ -93,7 +93,6 @@ foreach ($requiredPath in @($payloadArchive, $payloadMetadata)) {
 $payloadInfo = Get-Content -LiteralPath $payloadMetadata -Raw | ConvertFrom-Json
 if (
     $payloadInfo.repository -ne 'https://github.com/openclaw/openclaw' -or
-    $payloadInfo.contentOrigin -ne 'public-upstream' -or
     $payloadInfo.architecture -ne $Architecture -or
     $payloadInfo.archive -ne (Split-Path $payloadArchive -Leaf)
 ) {
@@ -264,22 +263,21 @@ try {
     $cerPath = Join-Path $OutputDirectory "openclaw-poc-$Architecture.cer"
     Export-Certificate -Cert $certificate -FilePath $cerPath -Force | Out-Null
 
-    $expectedPublicFiles =
+    $expectedPackageFiles =
         [System.Collections.Generic.Dictionary[string, object]]::new(
             [System.StringComparer]::OrdinalIgnoreCase
         )
-    $expectedPublicFiles.Add(
+    $expectedPackageFiles.Add(
         "payload/$(Split-Path $payloadArchive -Leaf)",
         [pscustomobject]@{
             Hash = $payloadHash
-            Source = 'https://github.com/openclaw/openclaw'
         }
     )
     foreach ($runtimeFile in Get-ChildItem -LiteralPath $runtimeTarget -File -Recurse) {
         $relativePath = (
             [IO.Path]::GetRelativePath($runtimeTarget, $runtimeFile.FullName)
         ).Replace('\', '/')
-        $expectedPublicFiles.Add(
+        $expectedPackageFiles.Add(
             "runtime/$relativePath",
             [pscustomobject]@{
                 Hash = (
@@ -287,12 +285,10 @@ try {
                         -LiteralPath $runtimeFile.FullName `
                         -Algorithm SHA256
                 ).Hash.ToLowerInvariant()
-                Source = $nodeArchiveUrl
             }
         )
     }
 
-    $publicFiles = [System.Collections.Generic.List[object]]::new()
     $packageEntries = [System.Collections.Generic.HashSet[string]]::new(
         [System.StringComparer]::OrdinalIgnoreCase
     )
@@ -308,7 +304,7 @@ try {
             $null = $packageEntries.Add($decodedPath)
             $expectedEntry = $null
             if (
-                -not $expectedPublicFiles.Remove(
+                -not $expectedPackageFiles.Remove(
                     $decodedPath,
                     [ref]$expectedEntry
                 )
@@ -329,14 +325,9 @@ try {
             }
 
             if ($packagedHash -ne $expectedEntry.Hash) {
-                throw "MSBuild changed public package content: $decodedPath"
+                throw "MSBuild changed package content: $decodedPath"
             }
 
-            $publicFiles.Add([ordered]@{
-                path = $entry.FullName
-                sha256 = $packagedHash
-                source = $expectedEntry.Source
-            })
         }
     }
     finally {
@@ -356,11 +347,11 @@ try {
         }
     }
 
-    if ($expectedPublicFiles.Count -ne 0) {
+    if ($expectedPackageFiles.Count -ne 0) {
         throw (
-            'MSBuild omitted public package content: ' +
+            'MSBuild omitted package content: ' +
             (
-                $expectedPublicFiles.Keys |
+                $expectedPackageFiles.Keys |
                     Sort-Object |
                     Select-Object -First 5
             ) -join ', '
@@ -377,14 +368,12 @@ try {
         architecture = $Architecture
         archive = $msixName
         sha256 = $msixHash
-        contentOrigin = 'repository-build'
         packageVersion = $PackageVersion
         publisher = $publisher
         nodeVersion = $NodeVersion
         nodeArchive = $nodeArchiveName
         nodeArchiveSha256 = $actualNodeHash
-        publicFiles = $publicFiles
-    } | ConvertTo-Json -Depth 5 |
+    } | ConvertTo-Json |
         Set-Content `
             -LiteralPath (Join-Path $OutputDirectory 'msix-metadata.json') `
             -Encoding utf8

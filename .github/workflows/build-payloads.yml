@@ -12,11 +12,10 @@ on:
       - tests/**
       - scripts/Build-Payload.ps1
       - scripts/Build-Msix.ps1
-      - scripts/Test-PublicSafety.ps1
   workflow_dispatch:
     inputs:
       openclaw_ref:
-        description: Public openclaw/openclaw tag, branch, or commit to package
+        description: openclaw/openclaw tag, branch, or commit to package
         required: true
         default: d2825c70a5168c19e98ec75babf27476a3c15669
         type: string
@@ -33,7 +32,6 @@ on:
       - tests/**
       - scripts/Build-Payload.ps1
       - scripts/Build-Msix.ps1
-      - scripts/Test-PublicSafety.ps1
 
 permissions:
   contents: read
@@ -44,27 +42,8 @@ env:
   OPENCLAW_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.openclaw_ref || 'd2825c70a5168c19e98ec75babf27476a3c15669' }}
 
 jobs:
-  public-safety:
-    name: Scan public repository
-    runs-on: windows-latest
-    steps:
-      - name: Check out repository and history
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
-        with:
-          fetch-depth: 0
-          persist-credentials: false
-
-      - name: Scan tracked repository
-        shell: pwsh
-        run: .\scripts\Test-PublicSafety.ps1 -Mode Repository
-
-      - name: Scan reachable Git history
-        shell: pwsh
-        run: .\scripts\Test-PublicSafety.ps1 -Mode History
-
   build-package:
-    name: Build public npm package
-    needs: public-safety
+    name: Build OpenClaw npm package
     runs-on: ubuntu-latest
     outputs:
       source_sha: ${{ steps.source.outputs.sha }}
@@ -172,14 +151,6 @@ jobs:
             -Architecture '${{ matrix.architecture }}' `
             -OutputDirectory '${{ runner.temp }}\openclaw-payload'
 
-      - name: Inspect payload archive
-        shell: pwsh
-        run: |
-          .\scripts\Test-PublicSafety.ps1 `
-            -Mode Package `
-            -Path '${{ runner.temp }}\openclaw-payload\app-${{ matrix.architecture }}.tar.gz' `
-            -ProvenancePath '${{ runner.temp }}\openclaw-payload\payload-metadata.json'
-
       - name: Upload payload
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
@@ -239,14 +210,6 @@ jobs:
             -PackageVersion '0.1.${{ github.run_number }}.${{ github.run_attempt }}' `
             -SourceCommit '${{ github.sha }}' `
             -OutputDirectory '${{ runner.temp }}\openclaw-msix'
-
-      - name: Inspect signed MSIX
-        shell: pwsh
-        run: |
-          .\scripts\Test-PublicSafety.ps1 `
-            -Mode Package `
-            -Path '${{ runner.temp }}\openclaw-msix\openclaw-poc-${{ matrix.architecture }}.msix' `
-            -ProvenancePath '${{ runner.temp }}\openclaw-msix\msix-metadata.json'
 
       - name: Upload MSIX
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7

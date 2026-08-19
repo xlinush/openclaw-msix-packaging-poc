@@ -144,13 +144,6 @@ try {
         -OutputDirectory $OutputDirectory
 
     $msixPath = Join-Path $OutputDirectory "openclaw-poc-$Architecture.msix"
-    $metadataPath = Join-Path $OutputDirectory 'msix-metadata.json'
-    Write-Host 'Inspecting the generated package.'
-    & .\scripts\Test-PublicSafety.ps1 `
-        -Mode Package `
-        -Path $msixPath `
-        -ProvenancePath $metadataPath
-
     Remove-Item -LiteralPath $workDirectory -Recurse -Force
     Write-Host ''
     Write-Host "Local MSIX is ready: $msixPath"

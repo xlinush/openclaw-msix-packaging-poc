@@ -593,8 +593,7 @@ public sealed class PayloadStagerTests : IDisposable
                     ? "arm64"
                     : "x64"),
             archive = Path.GetFileName(archivePath),
-            sha256 = hash,
-            contentOrigin = "public-upstream"
+            sha256 = hash
         };
         await File.WriteAllTextAsync(
             metadataPath,

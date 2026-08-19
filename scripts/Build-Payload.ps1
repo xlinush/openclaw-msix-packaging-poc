@@ -95,7 +95,6 @@ $sourceMetadata = Get-Content $sourceMetadataPath -Raw | ConvertFrom-Json
     architecture     = $Architecture
     archive          = $archiveName
     sha256           = $hash
-    contentOrigin    = 'public-upstream'
     nodeVersion      = (& node --version)
     npmVersion       = (& npm --version)
 } | ConvertTo-Json | Set-Content (Join-Path $OutputDirectory 'payload-metadata.json') -Encoding utf8

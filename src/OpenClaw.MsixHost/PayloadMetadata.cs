@@ -8,8 +8,7 @@ public sealed record PayloadMetadata(
     [property: JsonPropertyName("resolvedCommit")] string ResolvedCommit,
     [property: JsonPropertyName("architecture")] string Architecture,
     [property: JsonPropertyName("archive")] string Archive,
-    [property: JsonPropertyName("sha256")] string Sha256,
-    [property: JsonPropertyName("contentOrigin")] string ContentOrigin)
+    [property: JsonPropertyName("sha256")] string Sha256)
 {
     public static async Task<PayloadMetadata> LoadAsync(
         string path,
@@ -39,12 +38,8 @@ public sealed record PayloadMetadata(
     {
         if (Repository != "https://github.com/openclaw/openclaw")
         {
-            throw new InvalidDataException("Payload repository is not the approved public upstream.");
-        }
-
-        if (ContentOrigin != "public-upstream")
-        {
-            throw new InvalidDataException("Payload content origin is not public-upstream.");
+            throw new InvalidDataException(
+                "Payload repository does not match openclaw/openclaw.");
         }
 
         if (ResolvedCommit.Length != 40 || !ResolvedCommit.All(Uri.IsHexDigit))

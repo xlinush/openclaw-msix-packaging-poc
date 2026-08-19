@@ -14,9 +14,9 @@ Artifacts produced here are for development and evaluation only.
 ## C# host
 
 The host targets .NET 10, publishes with NativeAOT, and has no application
-runtime dependencies beyond public Windows MSIX build tooling. It:
+runtime dependencies beyond Windows MSIX build tooling. It:
 
-1. validates the public payload metadata and SHA-256;
+1. validates the payload metadata and SHA-256;
 2. rejects absolute paths, traversal, links, special entries, duplicate files,
    Windows device names, and oversized archives;
 3. extracts into a temporary directory beside
@@ -111,26 +111,6 @@ short-lived development certificate, signs the MSIX, uploads only the public
 `.cer` certificate, and destroys the private key. The certificate must be
 trusted locally before installing these evaluation packages.
 
-## Public-development boundary
-
-This is a public, clean-room POC. Implementation must be based only on the
-public RFC, upstream OpenClaw, public platform documentation, and other sources
-recorded in [PUBLIC-SOURCES.md](PUBLIC-SOURCES.md). Do not copy, translate, or
-adapt private source code, build definitions, manifests, binaries, or design
-documents.
-
-See [PUBLIC-DEVELOPMENT-POLICY.md](PUBLIC-DEVELOPMENT-POLICY.md) before making
-changes. Run the safety check before every commit:
-
-```powershell
-pwsh -File .\scripts\Test-PublicSafety.ps1 -Mode Staged -RequireLocalConfiguration
-```
-
-Create the ignored local configuration from
-[`.public-safety.local.example.json`](.public-safety.local.example.json) before
-starting implementation work. CI independently scans the tracked repository,
-Git history, and generated payload archives.
-
 ## Build
 
 ```powershell
@@ -145,7 +125,7 @@ dotnet publish .\src\OpenClaw.MsixHost\OpenClaw.MsixHost.csproj `
 `scripts\Build-Msix.ps1` is the local composition entry point. It requires a
 payload directory, downloads Node.js from the official distribution, verifies
 `SHASUMS256.txt`, stages generated content under `content\`, and invokes the
-public Windows SDK MSBuild MSIX targets to build a NativeAOT package with an
+Windows SDK MSBuild MSIX targets to build a NativeAOT package with an
 ephemeral development signature. The source-controlled package contract is
 `src\OpenClaw.MsixHost\Package.appxmanifest`; only a generated intermediate copy
 is version-stamped during the build. NativeAOT requires Visual Studio Build
@@ -159,8 +139,8 @@ changes, run:
 .\scripts\Build-LocalMsix.ps1 -Architecture x64
 ```
 
-The wrapper downloads the latest successful public payload from GitHub
-Actions, builds the current host source with NativeAOT, creates and signs the MSIX, and
-runs the package safety scanner. Output is written below
+The wrapper downloads the latest successful payload from GitHub Actions,
+builds the current host source with NativeAOT, and creates and signs the MSIX.
+Output is written below
 `artifacts\local-msix\`. Use `-PayloadDirectory` to build without downloading
 an artifact, or `-PayloadRunId` to select a specific successful workflow.

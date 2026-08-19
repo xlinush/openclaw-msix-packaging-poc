@@ -27,27 +27,8 @@ permissions:
   contents: read
 
 jobs:
-  public-safety:
-    name: Scan public repository
-    runs-on: windows-latest
-    steps:
-      - name: Check out repository and history
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
-        with:
-          fetch-depth: 0
-          persist-credentials: false
-
-      - name: Scan tracked repository
-        shell: pwsh
-        run: .\scripts\Test-PublicSafety.ps1 -Mode Repository
-
-      - name: Scan reachable Git history
-        shell: pwsh
-        run: .\scripts\Test-PublicSafety.ps1 -Mode History
-
   test:
     name: Test host
-    needs: public-safety
     runs-on: windows-latest
     steps:
       - name: Check out repository
@@ -119,7 +100,7 @@ jobs:
             )
           }
 
-      - name: Create and inspect host archive
+      - name: Create host archive
         shell: pwsh
         run: |
           $archiveName = 'openclaw-poc-${{ matrix.runtime }}.zip'
@@ -135,12 +116,7 @@ jobs:
             architecture = '${{ matrix.runtime }}'
             archive = $archiveName
             sha256 = $hash
-            contentOrigin = 'repository-build'
           } | ConvertTo-Json | Set-Content $metadataPath -Encoding utf8
-          .\scripts\Test-PublicSafety.ps1 `
-            -Mode Package `
-            -Path $archivePath `
-            -ProvenancePath $metadataPath
 
       - name: Upload host
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7

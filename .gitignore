@@ -7,9 +7,6 @@ node_modules/
 *.tar.gz
 *.sha256
 
-# Local clean-room configuration can contain private paths and identifiers.
-.public-safety.local.json
-
 # Generated packaging, build, and signing outputs.
 bin/
 obj/
