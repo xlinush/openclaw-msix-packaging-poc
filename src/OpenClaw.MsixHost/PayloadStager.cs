@@ -182,7 +182,8 @@ public sealed class PayloadStager(
                 await JsonSerializer.SerializeAsync(
                     inventoryStream,
                     inventory,
-                    cancellationToken: cancellationToken);
+                    OpenClawJsonContext.Default.PayloadInventory,
+                    cancellationToken);
             }
             await WriteVerificationMarkerAsync(
                 temporaryDirectory,
@@ -414,9 +415,10 @@ public sealed class PayloadStager(
         try
         {
             await using FileStream stream = File.OpenRead(inventoryPath);
-            inventory = await JsonSerializer.DeserializeAsync<PayloadInventory>(
+            inventory = await JsonSerializer.DeserializeAsync(
                 stream,
-                cancellationToken: cancellationToken);
+                OpenClawJsonContext.Default.PayloadInventory,
+                cancellationToken);
         }
         catch (JsonException exception)
         {
@@ -608,9 +610,10 @@ public sealed class PayloadStager(
         {
             await using FileStream stream = File.OpenRead(inventoryPath);
             PayloadInventory? inventory =
-                await JsonSerializer.DeserializeAsync<PayloadInventory>(
+                await JsonSerializer.DeserializeAsync(
                     stream,
-                    cancellationToken: cancellationToken);
+                    OpenClawJsonContext.Default.PayloadInventory,
+                    cancellationToken);
             return inventory is not null &&
                 inventory.Files is not null &&
                 inventory.Files.Count > 0 &&
@@ -653,14 +656,15 @@ public sealed class PayloadStager(
         }
     }
 
-    private sealed record PayloadInventory(
-        string PayloadSha256,
-        IReadOnlyList<PayloadInventoryEntry> Files);
-
-    private sealed record PayloadInventoryEntry(
-        string Path,
-        long Length,
-        string Sha256);
 }
+
+internal sealed record PayloadInventory(
+    string PayloadSha256,
+    IReadOnlyList<PayloadInventoryEntry> Files);
+
+internal sealed record PayloadInventoryEntry(
+    string Path,
+    long Length,
+    string Sha256);
 
 public sealed record StagedPayload(string DirectoryPath, string PayloadSha256);

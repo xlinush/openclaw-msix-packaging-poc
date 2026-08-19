@@ -46,7 +46,6 @@ if (-not $OutputDirectory) {
 }
 $OutputDirectory = [IO.Path]::GetFullPath($OutputDirectory)
 $workDirectory = Join-Path $OutputDirectory 'work'
-$hostDirectory = Join-Path $workDirectory 'host'
 
 if (Test-Path -LiteralPath $OutputDirectory) {
     throw (
@@ -54,7 +53,7 @@ if (Test-Path -LiteralPath $OutputDirectory) {
         'Choose another -PackageVersion or -OutputDirectory.'
     )
 }
-New-Item -Path $hostDirectory -ItemType Directory -Force | Out-Null
+New-Item -Path $workDirectory -ItemType Directory -Force | Out-Null
 
 if ($PayloadDirectory) {
     $resolvedPayloadDirectory = (Resolve-Path -LiteralPath $PayloadDirectory).Path
@@ -118,21 +117,10 @@ try {
         -Command {
             & dotnet restore `
                 .\src\OpenClaw.MsixHost\OpenClaw.MsixHost.csproj `
-                --locked-mode
-        }
-
-    Write-Host "Publishing the current local win-$Architecture host source."
-    Invoke-CheckedCommand `
-        -FailureMessage 'Host publication failed.' `
-        -Command {
-            & dotnet publish `
-                .\src\OpenClaw.MsixHost\OpenClaw.MsixHost.csproj `
-                --configuration Release `
                 --runtime "win-$Architecture" `
-                --self-contained true `
-                --output $hostDirectory `
-                --no-restore `
-                -p:DebugType=None
+                -p:PublishAot=true `
+                -p:IncludePackagingContent=true `
+                "-p:Platform=$Architecture"
         }
 
     $sourceCommit = (& git rev-parse HEAD) -join ''
@@ -147,7 +135,6 @@ try {
 
     Write-Host "Building development-signed MSIX version $PackageVersion."
     & .\scripts\Build-Msix.ps1 `
-        -HostPublishDirectory $hostDirectory `
         -PayloadDirectory $resolvedPayloadDirectory `
         -Architecture $Architecture `
         -NodeVersion 24.16.0 `

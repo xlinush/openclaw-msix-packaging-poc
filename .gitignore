@@ -1,4 +1,7 @@
 artifacts/
+content/openclaw/*
+!content/openclaw/.gitkeep
+content/runtime/
 node_modules/
 *.tgz
 *.tar.gz

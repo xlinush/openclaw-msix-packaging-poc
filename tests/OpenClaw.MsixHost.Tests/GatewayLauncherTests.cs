@@ -107,6 +107,64 @@ public sealed class GatewayLauncherTests : IDisposable
             startInfo.ArgumentList);
     }
 
+    [Theory]
+    [InlineData("setup")]
+    [InlineData("onboard")]
+    public void CreateStartInfoSkipsDaemonInstallationDuringSetup(string command)
+    {
+        var startInfo = GatewayLauncher.CreateStartInfo(
+            "node",
+            _payloadDirectory,
+            [command, "--mode", "local"]);
+
+        Assert.Equal(
+            [
+                Path.Combine(_payloadDirectory, "openclaw.mjs"),
+                command,
+                "--mode",
+                "local",
+                "--skip-daemon"
+            ],
+            startInfo.ArgumentList);
+    }
+
+    [Fact]
+    public void CreateStartInfoPreservesExplicitDaemonSkip()
+    {
+        var startInfo = GatewayLauncher.CreateStartInfo(
+            "node",
+            _payloadDirectory,
+            ["setup", "--no-install-daemon"]);
+
+        Assert.Equal(
+            [
+                Path.Combine(_payloadDirectory, "openclaw.mjs"),
+                "setup",
+                "--no-install-daemon"
+            ],
+            startInfo.ArgumentList);
+    }
+
+    [Theory]
+    [InlineData("gateway", "install")]
+    [InlineData("setup", "--install-daemon")]
+    [InlineData("onboard", "--install-daemon")]
+    public void CreateStartInfoRejectsDaemonInstallation(
+        string command,
+        string installArgument)
+    {
+        HostUsageException exception = Assert.Throws<HostUsageException>(() =>
+            GatewayLauncher.CreateStartInfo(
+                "node",
+                _payloadDirectory,
+                [command, installArgument]));
+
+        Assert.Contains(
+            "not support",
+            exception.Message,
+            StringComparison.OrdinalIgnoreCase);
+    }
+
     public void Dispose()
     {
         Directory.Delete(_payloadDirectory, recursive: true);

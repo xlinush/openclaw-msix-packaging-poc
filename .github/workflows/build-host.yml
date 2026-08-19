@@ -5,6 +5,7 @@ on:
     paths:
       - .github/workflows/build-host.yml
       - Directory.Build.props
+      - Directory.Packages.props
       - global.json
       - OpenClaw.MsixPackaging.sln
       - src/**
@@ -15,6 +16,7 @@ on:
     paths:
       - .github/workflows/build-host.yml
       - Directory.Build.props
+      - Directory.Packages.props
       - global.json
       - OpenClaw.MsixPackaging.sln
       - src/**
@@ -59,11 +61,12 @@ jobs:
           global-json-file: global.json
           cache: true
           cache-dependency-path: |
-            src/**/packages.lock.json
-            tests/**/packages.lock.json
+            Directory.Packages.props
+            src/**/*.csproj
+            tests/**/*.csproj
 
-      - name: Restore locked dependencies
-        run: dotnet restore .\OpenClaw.MsixPackaging.sln --locked-mode
+      - name: Restore dependencies
+        run: dotnet restore .\OpenClaw.MsixPackaging.sln
 
       - name: Run tests
         run: dotnet test .\OpenClaw.MsixPackaging.sln --configuration Release --no-restore
@@ -90,21 +93,31 @@ jobs:
           global-json-file: global.json
           cache: true
           cache-dependency-path: |
-            src/**/packages.lock.json
-            tests/**/packages.lock.json
+            Directory.Packages.props
+            src/**/*.csproj
+            tests/**/*.csproj
 
       - name: Publish host
         shell: pwsh
         run: |
+          $env:Path = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer;$env:Path"
           dotnet restore .\src\OpenClaw.MsixHost\OpenClaw.MsixHost.csproj `
-            --locked-mode
+            --runtime '${{ matrix.runtime }}' `
+            -p:PublishAot=true
           dotnet publish .\src\OpenClaw.MsixHost\OpenClaw.MsixHost.csproj `
             --configuration Release `
             --runtime '${{ matrix.runtime }}' `
-            --self-contained false `
+            --self-contained true `
             --output '${{ runner.temp }}\host' `
             --no-restore `
             -p:DebugType=None
+          $files = @(Get-ChildItem '${{ runner.temp }}\host' -File)
+          if ($files.Count -ne 1 -or $files[0].Name -ne 'openclaw-poc.exe') {
+            throw (
+              'NativeAOT publication must contain only openclaw-poc.exe; found: ' +
+              (($files.Name | Sort-Object) -join ', ')
+            )
+          }
 
       - name: Create and inspect host archive
         shell: pwsh

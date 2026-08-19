@@ -1,9 +1,6 @@
 [CmdletBinding()]
 param(
     [Parameter(Mandatory)]
-    [string]$HostPublishDirectory,
-
-    [Parameter(Mandatory)]
     [string]$PayloadDirectory,
 
     [Parameter(Mandatory)]
@@ -27,73 +24,24 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+$repositoryRoot = Split-Path $PSScriptRoot -Parent
+$projectPath = Join-Path `
+    $repositoryRoot `
+    'src\OpenClaw.MsixHost\OpenClaw.MsixHost.csproj'
 $publisher = 'CN=xlinush'
-$identityName = 'xlinush.OpenClawMsixPackagingPoc'
-$displayName = 'OpenClaw MSIX Packaging POC'
 
-function Get-WindowsSdkTool {
+function Invoke-CheckedCommand {
     param(
         [Parameter(Mandatory)]
-        [string]$Name
+        [scriptblock]$Command,
+
+        [Parameter(Mandatory)]
+        [string]$FailureMessage
     )
 
-    $kitsRoot = Join-Path ${env:ProgramFiles(x86)} 'Windows Kits\10\bin'
-    $tool = Get-ChildItem -Path $kitsRoot -Filter $Name -File -Recurse |
-        Where-Object { $_.Directory.Name -eq 'x64' } |
-        Sort-Object {
-            try {
-                [version]$_.Directory.Parent.Name
-            }
-            catch {
-                [version]'0.0'
-            }
-        } -Descending |
-        Select-Object -First 1
-    if ($null -eq $tool) {
-        throw "$Name was not found in the Windows SDK."
-    }
-
-    return $tool.FullName
-}
-
-function New-PackageImage {
-    param(
-        [Parameter(Mandatory)]
-        [string]$Path,
-
-        [Parameter(Mandatory)]
-        [int]$Width,
-
-        [Parameter(Mandatory)]
-        [int]$Height
-    )
-
-    $bitmap = [System.Drawing.Bitmap]::new($Width, $Height)
-    $graphics = [System.Drawing.Graphics]::FromImage($bitmap)
-    try {
-        $graphics.Clear([System.Drawing.Color]::FromArgb(31, 41, 55))
-        $brush = [System.Drawing.SolidBrush]::new(
-            [System.Drawing.Color]::FromArgb(34, 211, 238)
-        )
-        try {
-            $margin = [Math]::Max(2, [Math]::Floor([Math]::Min($Width, $Height) / 6))
-            $graphics.FillEllipse(
-                $brush,
-                $margin,
-                $margin,
-                $Width - (2 * $margin),
-                $Height - (2 * $margin)
-            )
-        }
-        finally {
-            $brush.Dispose()
-        }
-
-        $bitmap.Save($Path, [System.Drawing.Imaging.ImageFormat]::Png)
-    }
-    finally {
-        $graphics.Dispose()
-        $bitmap.Dispose()
+    & $Command
+    if ($LASTEXITCODE -ne 0) {
+        throw "$FailureMessage Exit code: $LASTEXITCODE."
     }
 }
 
@@ -111,13 +59,32 @@ function Test-PackageVersion {
     }
 }
 
-Test-PackageVersion
-Add-Type -AssemblyName System.Drawing
+function Add-VswhereToPath {
+    if (Get-Command vswhere.exe -CommandType Application -ErrorAction SilentlyContinue) {
+        return
+    }
 
-$hostExecutable = Join-Path $HostPublishDirectory 'openclaw-poc.exe'
+    $vswhereDirectory = Join-Path `
+        ${env:ProgramFiles(x86)} `
+        'Microsoft Visual Studio\Installer'
+    $vswherePath = Join-Path $vswhereDirectory 'vswhere.exe'
+    if (-not (Test-Path -LiteralPath $vswherePath -PathType Leaf)) {
+        throw (
+            'vswhere.exe was not found. Install Visual Studio Build Tools with ' +
+            'the Desktop development with C++ workload.'
+        )
+    }
+
+    $env:Path = "$vswhereDirectory;$env:Path"
+}
+
+Test-PackageVersion
+Add-VswhereToPath
+
+$PayloadDirectory = (Resolve-Path -LiteralPath $PayloadDirectory).Path
 $payloadArchive = Join-Path $PayloadDirectory "app-$Architecture.tar.gz"
 $payloadMetadata = Join-Path $PayloadDirectory 'payload-metadata.json'
-foreach ($requiredPath in @($hostExecutable, $payloadArchive, $payloadMetadata)) {
+foreach ($requiredPath in @($payloadArchive, $payloadMetadata)) {
     if (-not (Test-Path -LiteralPath $requiredPath -PathType Leaf)) {
         throw "Required MSIX input was not found: $requiredPath"
     }
@@ -133,9 +100,33 @@ if (
     throw 'Payload metadata is not valid for this MSIX package.'
 }
 
-$payloadHash = (Get-FileHash -LiteralPath $payloadArchive -Algorithm SHA256).Hash.ToLowerInvariant()
+$payloadHash = (
+    Get-FileHash -LiteralPath $payloadArchive -Algorithm SHA256
+).Hash.ToLowerInvariant()
 if ($payloadInfo.sha256 -ine $payloadHash) {
     throw 'Payload hash does not match payload metadata.'
+}
+
+$contentRoot = Join-Path $repositoryRoot 'content'
+$openClawContent = Join-Path $contentRoot 'openclaw'
+$runtimeTarget = Join-Path (Join-Path $contentRoot 'runtime') $Architecture
+New-Item -Path $openClawContent -ItemType Directory -Force | Out-Null
+
+$stagedPayloadArchive = Join-Path `
+    $openClawContent `
+    (Split-Path $payloadArchive -Leaf)
+$stagedPayloadMetadata = Join-Path $openClawContent 'payload-metadata.json'
+if (
+    [IO.Path]::GetFullPath($payloadArchive) -ne
+    [IO.Path]::GetFullPath($stagedPayloadArchive)
+) {
+    Copy-Item -LiteralPath $payloadArchive -Destination $stagedPayloadArchive -Force
+}
+if (
+    [IO.Path]::GetFullPath($payloadMetadata) -ne
+    [IO.Path]::GetFullPath($stagedPayloadMetadata)
+) {
+    Copy-Item -LiteralPath $payloadMetadata -Destination $stagedPayloadMetadata -Force
 }
 
 $temporaryRoot = if ($env:RUNNER_TEMP) {
@@ -147,22 +138,17 @@ else {
 $workRoot = Join-Path `
     $temporaryRoot `
     "openclaw-msix-$Architecture-$([guid]::NewGuid().ToString('N'))"
-$layout = Join-Path $workRoot 'layout'
 $nodeDownload = Join-Path $workRoot 'node'
 $nodeExtract = Join-Path $workRoot 'node-extract'
+$msixBuildDirectory = Join-Path $workRoot 'appx'
 $certificate = $null
-New-Item -Path $layout, $nodeDownload, $nodeExtract -ItemType Directory -Force |
+New-Item `
+    -Path $nodeDownload, $nodeExtract, $msixBuildDirectory, $OutputDirectory `
+    -ItemType Directory `
+    -Force |
     Out-Null
-New-Item -Path $OutputDirectory -ItemType Directory -Force | Out-Null
 
 try {
-    Copy-Item -Path (Join-Path $HostPublishDirectory '*') -Destination $layout -Recurse
-
-    $payloadTarget = Join-Path $layout 'payload'
-    New-Item -Path $payloadTarget -ItemType Directory | Out-Null
-    Copy-Item -LiteralPath $payloadArchive -Destination $payloadTarget
-    Copy-Item -LiteralPath $payloadMetadata -Destination $payloadTarget
-
     $nodeArchiveName = "node-v$NodeVersion-win-$Architecture.zip"
     $nodeBaseUrl = "https://nodejs.org/dist/v$NodeVersion"
     $nodeArchiveUrl = "$nodeBaseUrl/$nodeArchiveName"
@@ -172,7 +158,9 @@ try {
     Invoke-WebRequest -Uri $nodeArchiveUrl -OutFile $nodeArchivePath
 
     $checksumLine = Get-Content -LiteralPath $checksumsPath |
-        Where-Object { $_ -match "^[0-9a-fA-F]{64}\s+$([regex]::Escape($nodeArchiveName))$" } |
+        Where-Object {
+            $_ -match "^[0-9a-fA-F]{64}\s+$([regex]::Escape($nodeArchiveName))$"
+        } |
         Select-Object -First 1
     if (-not $checksumLine) {
         throw "Official checksum was not found for $nodeArchiveName."
@@ -186,95 +174,25 @@ try {
         throw 'Node.js archive hash does not match the official checksum.'
     }
 
+    Copy-Item `
+        -LiteralPath $nodeArchivePath `
+        -Destination (Join-Path $openClawContent $nodeArchiveName) `
+        -Force
     Expand-Archive -LiteralPath $nodeArchivePath -DestinationPath $nodeExtract
     $nodeRoot = @(Get-ChildItem -LiteralPath $nodeExtract -Directory)
-    if ($nodeRoot.Count -ne 1 -or
-        -not (Test-Path -LiteralPath (Join-Path $nodeRoot[0].FullName 'node.exe'))) {
+    if (
+        $nodeRoot.Count -ne 1 -or
+        -not (Test-Path -LiteralPath (Join-Path $nodeRoot[0].FullName 'node.exe'))
+    ) {
         throw 'The official Node.js archive has an unexpected layout.'
     }
 
-    $runtimeTarget = Join-Path $layout 'runtime'
-    New-Item -Path $runtimeTarget -ItemType Directory | Out-Null
-    Copy-Item -Path (Join-Path $nodeRoot[0].FullName '*') `
+    Remove-Item -LiteralPath $runtimeTarget -Recurse -Force -ErrorAction SilentlyContinue
+    New-Item -Path $runtimeTarget -ItemType Directory -Force | Out-Null
+    Copy-Item `
+        -Path (Join-Path $nodeRoot[0].FullName '*') `
         -Destination $runtimeTarget `
         -Recurse
-
-    $assets = Join-Path $layout 'Assets'
-    New-Item -Path $assets -ItemType Directory | Out-Null
-    New-PackageImage -Path (Join-Path $assets 'Square44x44Logo.png') -Width 44 -Height 44
-    New-PackageImage -Path (Join-Path $assets 'Square150x150Logo.png') -Width 150 -Height 150
-    New-PackageImage -Path (Join-Path $assets 'StoreLogo.png') -Width 50 -Height 50
-
-    $manifest = @"
-<?xml version="1.0" encoding="utf-8"?>
-<Package
-  xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10"
-  xmlns:uap="http://schemas.microsoft.com/appx/manifest/uap/windows10"
-  xmlns:uap5="http://schemas.microsoft.com/appx/manifest/uap/windows10/5"
-  xmlns:rescap="http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities"
-  IgnorableNamespaces="uap uap5 rescap">
-  <Identity
-    Name="$identityName"
-    Publisher="$publisher"
-    Version="$PackageVersion"
-    ProcessorArchitecture="$Architecture" />
-  <Properties>
-    <DisplayName>$displayName</DisplayName>
-    <PublisherDisplayName>xlinush</PublisherDisplayName>
-    <Logo>Assets\StoreLogo.png</Logo>
-  </Properties>
-  <Dependencies>
-    <TargetDeviceFamily
-      Name="Windows.Desktop"
-      MinVersion="10.0.19041.0"
-      MaxVersionTested="10.0.26100.0" />
-  </Dependencies>
-  <Resources>
-    <Resource Language="en-us" />
-  </Resources>
-  <Applications>
-    <Application
-      Id="App"
-      Executable="openclaw-poc.exe"
-      EntryPoint="Windows.FullTrustApplication">
-      <uap:VisualElements
-        DisplayName="$displayName"
-        Description="Unofficial OpenClaw MSIX packaging proof of concept"
-        BackgroundColor="transparent"
-        Square150x150Logo="Assets\Square150x150Logo.png"
-        Square44x44Logo="Assets\Square44x44Logo.png" />
-      <Extensions>
-        <uap5:Extension
-          Category="windows.appExecutionAlias"
-          Executable="openclaw-poc.exe"
-          EntryPoint="Windows.FullTrustApplication">
-          <uap5:AppExecutionAlias>
-            <uap5:ExecutionAlias Alias="openclaw-poc.exe" />
-          </uap5:AppExecutionAlias>
-        </uap5:Extension>
-      </Extensions>
-    </Application>
-  </Applications>
-  <Capabilities>
-    <rescap:Capability Name="runFullTrust" />
-  </Capabilities>
-</Package>
-"@
-    $manifest | Set-Content `
-        -LiteralPath (Join-Path $layout 'AppxManifest.xml') `
-        -Encoding utf8
-
-    $makeAppx = Get-WindowsSdkTool -Name 'makeappx.exe'
-    $signTool = Get-WindowsSdkTool -Name 'signtool.exe'
-    $msixName = "openclaw-poc-$Architecture.msix"
-    $msixPath = Join-Path $OutputDirectory $msixName
-    Remove-Item -LiteralPath $msixPath -Force -ErrorAction SilentlyContinue
-    $makeAppxOutput = @(& $makeAppx pack /d $layout /p $msixPath /o 2>&1)
-    if ($LASTEXITCODE -ne 0) {
-        $makeAppxOutput | Write-Error
-        throw "MakeAppx failed with exit code $LASTEXITCODE."
-    }
-    Write-Host ($makeAppxOutput | Select-Object -Last 1)
 
     $certificate = New-SelfSignedCertificate `
         -Type Custom `
@@ -290,27 +208,66 @@ try {
         -TextExtension @('2.5.29.37={text}1.3.6.1.5.5.7.3.3')
     $pfxPath = Join-Path $workRoot 'development-signing.pfx'
     $pfxPasswordText = [guid]::NewGuid().ToString('N')
-    $pfxPassword = ConvertTo-SecureString $pfxPasswordText -AsPlainText -Force
+    $pfxPassword = ConvertTo-SecureString `
+        $pfxPasswordText `
+        -AsPlainText `
+        -Force
     Export-PfxCertificate `
         -Cert $certificate `
         -FilePath $pfxPath `
         -Password $pfxPassword |
         Out-Null
+
+    $appxOutput = $msixBuildDirectory.TrimEnd('\') + '\'
+    Write-Host "Building NativeAOT win-$Architecture MSIX with MSBuild."
+    Invoke-CheckedCommand `
+        -FailureMessage 'NativeAOT MSIX build failed.' `
+        -Command {
+            & dotnet build $projectPath `
+                --configuration Release `
+                --runtime "win-$Architecture" `
+                --no-restore `
+                "-p:Platform=$Architecture" `
+                "-p:RuntimeIdentifiers=win-$Architecture" `
+                -p:PublishAot=true `
+                -p:SelfContained=true `
+                -p:IncludePackagingContent=true `
+                -p:GenerateAppxPackageOnBuild=true `
+                "-p:PackageIdentityVersion=$PackageVersion" `
+                "-p:AppxPackageDir=$appxOutput" `
+                -p:AppxBundle=Never `
+                -p:AppxPackageSigningEnabled=true `
+                "-p:PackageCertificateThumbprint=$($certificate.Thumbprint)" `
+                "-p:PackageCertificateKeyFile=$pfxPath" `
+                "-p:PackageCertificatePassword=$pfxPasswordText" `
+                -p:DebugType=None `
+                --nologo
+        }
+
+    $builtPackages = @(
+        Get-ChildItem `
+            -LiteralPath $msixBuildDirectory `
+            -Filter '*.msix' `
+            -File `
+            -Recurse
+    )
+    if ($builtPackages.Count -ne 1) {
+        throw (
+            "Expected one MSIX under '$msixBuildDirectory'; " +
+            "found $($builtPackages.Count)."
+        )
+    }
+
+    $msixName = "openclaw-poc-$Architecture.msix"
+    $msixPath = Join-Path $OutputDirectory $msixName
+    Copy-Item -LiteralPath $builtPackages[0].FullName -Destination $msixPath -Force
     $cerPath = Join-Path $OutputDirectory "openclaw-poc-$Architecture.cer"
     Export-Certificate -Cert $certificate -FilePath $cerPath -Force | Out-Null
 
-    $signOutput = @(
-        & $signTool sign /fd SHA256 /f $pfxPath /p $pfxPasswordText $msixPath 2>&1
-    )
-    if ($LASTEXITCODE -ne 0) {
-        $signOutput | Write-Error
-        throw "SignTool failed with exit code $LASTEXITCODE."
-    }
-    Write-Host ($signOutput | Select-Object -Last 1)
-
-    $expectedPublicFiles = [System.Collections.Generic.Dictionary[string, object]]::new(
-        [System.StringComparer]::OrdinalIgnoreCase
-    )
+    $expectedPublicFiles =
+        [System.Collections.Generic.Dictionary[string, object]]::new(
+            [System.StringComparer]::OrdinalIgnoreCase
+        )
     $expectedPublicFiles.Add(
         "payload/$(Split-Path $payloadArchive -Leaf)",
         [pscustomobject]@{
@@ -320,13 +277,15 @@ try {
     )
     foreach ($runtimeFile in Get-ChildItem -LiteralPath $runtimeTarget -File -Recurse) {
         $relativePath = (
-            [IO.Path]::GetRelativePath($layout, $runtimeFile.FullName)
+            [IO.Path]::GetRelativePath($runtimeTarget, $runtimeFile.FullName)
         ).Replace('\', '/')
         $expectedPublicFiles.Add(
-            $relativePath,
+            "runtime/$relativePath",
             [pscustomobject]@{
                 Hash = (
-                Get-FileHash -LiteralPath $runtimeFile.FullName -Algorithm SHA256
+                    Get-FileHash `
+                        -LiteralPath $runtimeFile.FullName `
+                        -Algorithm SHA256
                 ).Hash.ToLowerInvariant()
                 Source = $nodeArchiveUrl
             }
@@ -334,6 +293,9 @@ try {
     }
 
     $publicFiles = [System.Collections.Generic.List[object]]::new()
+    $packageEntries = [System.Collections.Generic.HashSet[string]]::new(
+        [System.StringComparer]::OrdinalIgnoreCase
+    )
     Add-Type -AssemblyName System.IO.Compression.FileSystem
     $packageArchive = [System.IO.Compression.ZipFile]::OpenRead($msixPath)
     try {
@@ -343,8 +305,14 @@ try {
             }
 
             $decodedPath = [Uri]::UnescapeDataString($entry.FullName)
+            $null = $packageEntries.Add($decodedPath)
             $expectedEntry = $null
-            if (-not $expectedPublicFiles.Remove($decodedPath, [ref]$expectedEntry)) {
+            if (
+                -not $expectedPublicFiles.Remove(
+                    $decodedPath,
+                    [ref]$expectedEntry
+                )
+            ) {
                 continue
             }
 
@@ -361,7 +329,7 @@ try {
             }
 
             if ($packagedHash -ne $expectedEntry.Hash) {
-                throw "MakeAppx changed public package content: $decodedPath"
+                throw "MSBuild changed public package content: $decodedPath"
             }
 
             $publicFiles.Add([ordered]@{
@@ -375,14 +343,33 @@ try {
         $packageArchive.Dispose()
     }
 
+    if (-not $packageEntries.Contains('openclaw-poc.exe')) {
+        throw 'The MSIX does not contain the NativeAOT host executable.'
+    }
+    foreach ($managedHostArtifact in @(
+        'openclaw-poc.dll',
+        'openclaw-poc.deps.json',
+        'openclaw-poc.runtimeconfig.json'
+    )) {
+        if ($packageEntries.Contains($managedHostArtifact)) {
+            throw "The MSIX contains managed host artifact: $managedHostArtifact"
+        }
+    }
+
     if ($expectedPublicFiles.Count -ne 0) {
         throw (
-            'MakeAppx omitted public package content: ' +
-            (($expectedPublicFiles.Keys | Sort-Object | Select-Object -First 5) -join ', ')
+            'MSBuild omitted public package content: ' +
+            (
+                $expectedPublicFiles.Keys |
+                    Sort-Object |
+                    Select-Object -First 5
+            ) -join ', '
         )
     }
 
-    $msixHash = (Get-FileHash -LiteralPath $msixPath -Algorithm SHA256).Hash.ToLowerInvariant()
+    $msixHash = (
+        Get-FileHash -LiteralPath $msixPath -Algorithm SHA256
+    ).Hash.ToLowerInvariant()
     [ordered]@{
         repository = 'https://github.com/xlinush/openclaw-msix-packaging-poc'
         resolvedCommit = $SourceCommit.ToLowerInvariant()
@@ -406,7 +393,8 @@ try {
 }
 finally {
     if ($null -ne $certificate) {
-        Remove-Item -LiteralPath "Cert:\CurrentUser\My\$($certificate.Thumbprint)" `
+        Remove-Item `
+            -LiteralPath "Cert:\CurrentUser\My\$($certificate.Thumbprint)" `
             -Force `
             -ErrorAction SilentlyContinue
     }

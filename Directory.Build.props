@@ -2,7 +2,7 @@
   <PropertyGroup>
     <AnalysisLevel>latest-recommended</AnalysisLevel>
     <Deterministic>true</Deterministic>
-    <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <MSBuildProjectExtensionsPath Condition="'$(IncludePackagingContent)' == 'true'">$(MSBuildProjectDirectory)\obj\packaging\</MSBuildProjectExtensionsPath>
   </PropertyGroup>
 </Project>

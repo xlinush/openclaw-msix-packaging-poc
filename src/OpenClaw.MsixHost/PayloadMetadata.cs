@@ -21,9 +21,10 @@ public sealed record PayloadMetadata(
         }
 
         await using FileStream stream = File.OpenRead(path);
-        PayloadMetadata? metadata = await JsonSerializer.DeserializeAsync<PayloadMetadata>(
+        PayloadMetadata? metadata = await JsonSerializer.DeserializeAsync(
             stream,
-            cancellationToken: cancellationToken);
+            OpenClawJsonContext.Default.PayloadMetadata,
+            cancellationToken);
 
         if (metadata is null)
         {

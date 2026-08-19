@@ -13,7 +13,8 @@ Artifacts produced here are for development and evaluation only.
 
 ## C# host
 
-The host targets .NET 8 and has no runtime NuGet dependencies. It:
+The host targets .NET 10, publishes with NativeAOT, and has no application
+runtime dependencies beyond public Windows MSIX build tooling. It:
 
 1. validates the public payload metadata and SHA-256;
 2. rejects absolute paths, traversal, links, special entries, duplicate files,
@@ -45,6 +46,17 @@ The file can be copied while the host is running.
 If OpenClaw exits with configuration code `78`, the host prints and records
 first-run guidance. Complete setup with `openclaw-poc setup` or
 `openclaw-poc onboard --mode local`, then launch `openclaw-poc` again.
+The host automatically adds `--skip-daemon` to setup and onboarding because it
+already runs the Gateway in the foreground. OpenClaw's separate Windows
+Scheduled Task is unsupported in this POC.
+
+Older POC packages could allow setup to create that task. If Windows reports a
+missing `%USERPROFILE%\.openclaw\gateway.vbs`, remove the stale task before
+installing and running the corrected package:
+
+```powershell
+openclaw-poc gateway uninstall
+```
 
 To locate and copy an MSIX log without waiting for the host to exit:
 
@@ -83,8 +95,10 @@ payload file before running an OpenClaw command. Normal launches avoid this
 expensive scan after the installed payload has been verified once.
 
 The MSIX places the payload under `payload\` and the verified official Node.js
-runtime under `runtime\` beside the host. Outside an MSIX build, the host falls
-back to `node` from `PATH` when that packaged runtime is absent. First-run
+runtime under `runtime\` beside the host. Packaging inputs are materialized
+under the ignored `content\openclaw\` and `content\runtime\` directories before
+MSBuild creates the package. Outside an MSIX build, the host falls back to
+`node` from `PATH` when that packaged runtime is absent. First-run
 onboarding orchestration and richer MSIX lifecycle integration remain separate
 work items.
 
@@ -120,18 +134,23 @@ Git history, and generated payload archives.
 ## Build
 
 ```powershell
-dotnet restore .\OpenClaw.MsixPackaging.sln --locked-mode
+dotnet restore .\OpenClaw.MsixPackaging.sln
 dotnet test .\OpenClaw.MsixPackaging.sln --configuration Release --no-restore
 dotnet publish .\src\OpenClaw.MsixHost\OpenClaw.MsixHost.csproj `
   --configuration Release `
   --runtime win-x64 `
-  --self-contained false
+  --self-contained true
 ```
 
 `scripts\Build-Msix.ps1` is the local composition entry point. It requires a
-published host and payload directory, downloads Node.js from the official
-distribution, verifies `SHASUMS256.txt`, creates the package with MakeAppx,
-and applies an ephemeral development signature with SignTool.
+payload directory, downloads Node.js from the official distribution, verifies
+`SHASUMS256.txt`, stages generated content under `content\`, and invokes the
+public Windows SDK MSBuild MSIX targets to build a NativeAOT package with an
+ephemeral development signature. The source-controlled package contract is
+`src\OpenClaw.MsixHost\Package.appxmanifest`; only a generated intermediate copy
+is version-stamped during the build. NativeAOT requires Visual Studio Build
+Tools with the Desktop development with C++ workload; the build script locates
+its linker through `vswhere.exe`.
 
 For a pre-push package using the current local source, including uncommitted
 changes, run:
@@ -141,7 +160,7 @@ changes, run:
 ```
 
 The wrapper downloads the latest successful public payload from GitHub
-Actions, publishes the current host source, creates and signs the MSIX, and
+Actions, builds the current host source with NativeAOT, creates and signs the MSIX, and
 runs the package safety scanner. Output is written below
 `artifacts\local-msix\`. Use `-PayloadDirectory` to build without downloading
 an artifact, or `-PayloadRunId` to select a specific successful workflow.

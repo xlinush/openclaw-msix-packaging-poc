@@ -5,6 +5,7 @@ on:
     paths:
       - .github/workflows/build-payloads.yml
       - Directory.Build.props
+      - Directory.Packages.props
       - global.json
       - OpenClaw.MsixPackaging.sln
       - src/**
@@ -25,6 +26,7 @@ on:
     paths:
       - .github/workflows/build-payloads.yml
       - Directory.Build.props
+      - Directory.Packages.props
       - global.json
       - OpenClaw.MsixPackaging.sln
       - src/**
@@ -208,8 +210,9 @@ jobs:
           global-json-file: global.json
           cache: true
           cache-dependency-path: |
-            src/**/packages.lock.json
-            tests/**/packages.lock.json
+            Directory.Packages.props
+            src/**/*.csproj
+            tests/**/*.csproj
 
       - name: Download payload
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
@@ -217,24 +220,19 @@ jobs:
           name: openclaw-payload-${{ matrix.architecture }}
           path: ${{ runner.temp }}\openclaw-payload
 
-      - name: Publish self-contained host
+      - name: Restore NativeAOT and MSIX dependencies
         shell: pwsh
         run: |
           dotnet restore .\src\OpenClaw.MsixHost\OpenClaw.MsixHost.csproj `
-            --locked-mode
-          dotnet publish .\src\OpenClaw.MsixHost\OpenClaw.MsixHost.csproj `
-            --configuration Release `
             --runtime 'win-${{ matrix.architecture }}' `
-            --self-contained true `
-            --output '${{ runner.temp }}\openclaw-host' `
-            --no-restore `
-            -p:DebugType=None
+            -p:PublishAot=true `
+            -p:IncludePackagingContent=true `
+            -p:Platform='${{ matrix.architecture }}'
 
       - name: Compose and sign development MSIX
         shell: pwsh
         run: |
           .\scripts\Build-Msix.ps1 `
-            -HostPublishDirectory '${{ runner.temp }}\openclaw-host' `
             -PayloadDirectory '${{ runner.temp }}\openclaw-payload' `
             -Architecture '${{ matrix.architecture }}' `
             -NodeVersion '${{ env.NODE_VERSION }}' `
