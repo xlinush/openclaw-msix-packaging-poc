@@ -2,7 +2,7 @@ using System.Diagnostics;
 using System.Text;
 using System.Xml.Linq;
 
-namespace OpenClaw.MsixHost;
+namespace OpenClaw.MSIXHost;
 
 public static class GatewayLauncher
 {

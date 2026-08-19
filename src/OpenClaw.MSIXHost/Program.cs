@@ -1,4 +1,4 @@
-namespace OpenClaw.MsixHost;
+namespace OpenClaw.MSIXHost;
 
 internal static class Program
 {
@@ -100,14 +100,31 @@ internal static class Program
                 return 0;
             }
 
+            bool isBootstrapLaunch = options.OpenClawArguments.Count == 0;
+            bool verifyInstalledPayload = options.VerifyInstalledPayload;
+            if (isBootstrapLaunch && !verifyInstalledPayload)
+            {
+                verifyInstalledPayload =
+                    BootstrapConsole.PromptForFullVerification(
+                        options.InstallDirectory,
+                        Console.In,
+                        Console.Out);
+            }
+
             var stager = new PayloadStager(
                 options.InstallDirectory,
                 ReportProgress,
-                options.VerifyInstalledPayload);
+                verifyInstalledPayload);
             StagedPayload payload = await stager.StageAsync(
                 options.PayloadPath,
                 options.MetadataPath,
                 CancellationToken.None);
+
+            if (isBootstrapLaunch)
+            {
+                BootstrapConsole.WritePreparationSummary(Console.Out, payload);
+                return 0;
+            }
 
             int exitCode = await GatewayLauncher.RunAsync(
                 options.NodePath,
@@ -147,6 +164,20 @@ internal static class Program
         }
         finally
         {
+            if (!Console.IsInputRedirected)
+            {
+                try
+                {
+                    BootstrapConsole.WaitForExit(Console.In, Console.Out);
+                }
+                catch (Exception exception) when (
+                    exception is IOException or ObjectDisposedException)
+                {
+                    WriteDiagnostic(
+                        $"Unable to wait for console input: {exception.GetType().Name}.");
+                }
+            }
+
             WriteDiagnostic("Host exiting.");
             diagnostics?.Dispose();
         }

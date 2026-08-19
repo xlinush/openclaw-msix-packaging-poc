@@ -21,7 +21,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\src\OpenClaw.MsixHost\OpenClaw.MsixHost.csproj" />
+    <ProjectReference Include="..\..\src\OpenClaw.MSIXHost\OpenClaw.MSIXHost.csproj" />
   </ItemGroup>
 
 </Project>

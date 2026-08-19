@@ -5,7 +5,7 @@ using System.Security.Cryptography;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 
-namespace OpenClaw.MsixHost.Tests;
+namespace OpenClaw.MSIXHost.Tests;
 
 public sealed class PayloadStagerTests : IDisposable
 {
@@ -39,7 +39,10 @@ public sealed class PayloadStagerTests : IDisposable
             fixture.MetadataPath,
             CancellationToken.None);
 
-        Assert.Equal(first, second);
+        Assert.Equal(first.DirectoryPath, second.DirectoryPath);
+        Assert.Equal(first.PayloadSha256, second.PayloadSha256);
+        Assert.False(first.Reused);
+        Assert.True(second.Reused);
         Assert.True(File.Exists(Path.Combine(first.DirectoryPath, "openclaw.mjs")));
         Assert.True(File.Exists(Path.Combine(first.DirectoryPath, "dist", "app.js")));
         Assert.Contains(
@@ -77,7 +80,9 @@ public sealed class PayloadStagerTests : IDisposable
             fixture.MetadataPath,
             CancellationToken.None);
 
-        Assert.Equal(staged, verified);
+        Assert.Equal(staged.DirectoryPath, verified.DirectoryPath);
+        Assert.Equal(staged.PayloadSha256, verified.PayloadSha256);
+        Assert.True(verified.Reused);
         Assert.Contains(
             "Migrated the existing payload inventory to the fast verification marker.",
             messages);
@@ -145,7 +150,10 @@ public sealed class PayloadStagerTests : IDisposable
             CancellationToken.None);
 
         string emptyFile = Path.Combine(first.DirectoryPath, "patches", ".gitkeep");
-        Assert.Equal(first, second);
+        Assert.Equal(first.DirectoryPath, second.DirectoryPath);
+        Assert.Equal(first.PayloadSha256, second.PayloadSha256);
+        Assert.False(first.Reused);
+        Assert.True(second.Reused);
         Assert.True(File.Exists(emptyFile));
         Assert.Equal(0, new FileInfo(emptyFile).Length);
     }
@@ -227,7 +235,9 @@ public sealed class PayloadStagerTests : IDisposable
             fixture.MetadataPath,
             CancellationToken.None);
 
-        Assert.Equal(staged, recovered);
+        Assert.Equal(staged.DirectoryPath, recovered.DirectoryPath);
+        Assert.Equal(staged.PayloadSha256, recovered.PayloadSha256);
+        Assert.True(recovered.Reused);
         Assert.True(File.Exists(Path.Combine(installDirectory, "openclaw.mjs")));
         Assert.False(Directory.Exists(backupDirectory));
         Assert.False(Directory.Exists(stagingDirectory));
@@ -267,7 +277,9 @@ public sealed class PayloadStagerTests : IDisposable
         }
 
         StagedPayload completed = await waitingStage;
-        Assert.Equal(initial, completed);
+        Assert.Equal(initial.DirectoryPath, completed.DirectoryPath);
+        Assert.Equal(initial.PayloadSha256, completed.PayloadSha256);
+        Assert.True(completed.Reused);
     }
 
     [Fact]

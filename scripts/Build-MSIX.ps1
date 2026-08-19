@@ -27,7 +27,7 @@ $ErrorActionPreference = 'Stop'
 $repositoryRoot = Split-Path $PSScriptRoot -Parent
 $projectPath = Join-Path `
     $repositoryRoot `
-    'src\OpenClaw.MsixHost\OpenClaw.MsixHost.csproj'
+    'src\OpenClaw.MSIXHost\OpenClaw.MSIXHost.csproj'
 $publisher = 'CN=xlinush'
 
 function Invoke-CheckedCommand {

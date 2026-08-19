@@ -1,6 +1,6 @@
 using System.Runtime.InteropServices;
 
-namespace OpenClaw.MsixHost;
+namespace OpenClaw.MSIXHost;
 
 public sealed record HostOptions(
     string PayloadPath,
@@ -99,8 +99,10 @@ public sealed record HostOptions(
                                         re-hash every installed payload file
               --host-help               show this help
 
-            With no OpenClaw arguments, the host runs: gateway run
-            All non-host arguments are forwarded unchanged to OpenClaw.
+            With no OpenClaw arguments, the host prepares the gateway files and
+            prints setup instructions without starting OpenClaw.
+            All non-host arguments are forwarded unchanged to OpenClaw after
+            the gateway files are prepared.
             """);
     }
 

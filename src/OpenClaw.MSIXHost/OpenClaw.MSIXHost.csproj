@@ -7,7 +7,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <AssemblyName>openclaw-poc</AssemblyName>
-    <RootNamespace>OpenClaw.MsixHost</RootNamespace>
+    <RootNamespace>OpenClaw.MSIXHost</RootNamespace>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <Platforms>x64;arm64</Platforms>
     <RuntimeIdentifiers>win-x64;win-arm64</RuntimeIdentifiers>
@@ -15,7 +15,7 @@
     <PublishAot Condition="'$(RuntimeIdentifier)' != ''">true</PublishAot>
     <UseAppHost Condition="'$(RuntimeIdentifier)' != ''">true</UseAppHost>
 
-    <EnableMsixTooling Condition="'$(IncludePackagingContent)' == 'true'">true</EnableMsixTooling>
+    <EnableMSIXTooling Condition="'$(IncludePackagingContent)' == 'true'">true</EnableMSIXTooling>
     <WindowsPackageType Condition="'$(IncludePackagingContent)' == 'true'">MSIX</WindowsPackageType>
     <WindowsPackageType Condition="'$(IncludePackagingContent)' != 'true'">None</WindowsPackageType>
     <GenerateAppxPackageOnBuild Condition="'$(IncludePackagingContent)' == 'true'">true</GenerateAppxPackageOnBuild>

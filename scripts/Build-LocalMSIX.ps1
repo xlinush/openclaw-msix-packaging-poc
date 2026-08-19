@@ -116,7 +116,7 @@ try {
         -FailureMessage 'Locked dependency restore failed.' `
         -Command {
             & dotnet restore `
-                .\src\OpenClaw.MsixHost\OpenClaw.MsixHost.csproj `
+                .\src\OpenClaw.MSIXHost\OpenClaw.MSIXHost.csproj `
                 --runtime "win-$Architecture" `
                 -p:PublishAot=true `
                 -p:IncludePackagingContent=true `
@@ -134,7 +134,7 @@ try {
     }
 
     Write-Host "Building development-signed MSIX version $PackageVersion."
-    & .\scripts\Build-Msix.ps1 `
+    & .\scripts\Build-MSIX.ps1 `
         -PayloadDirectory $resolvedPayloadDirectory `
         -Architecture $Architecture `
         -NodeVersion 24.16.0 `

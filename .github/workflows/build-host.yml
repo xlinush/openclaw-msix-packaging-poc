@@ -1,4 +1,4 @@
-name: Build C# host
+name: Validate C# host
 
 on:
   pull_request:
@@ -7,7 +7,7 @@ on:
       - Directory.Build.props
       - Directory.Packages.props
       - global.json
-      - OpenClaw.MsixPackaging.sln
+      - OpenClaw.MSIXPackaging.sln
       - src/**
       - tests/**
   push:
@@ -18,7 +18,7 @@ on:
       - Directory.Build.props
       - Directory.Packages.props
       - global.json
-      - OpenClaw.MsixPackaging.sln
+      - OpenClaw.MSIXPackaging.sln
       - src/**
       - tests/**
   workflow_dispatch:
@@ -47,13 +47,13 @@ jobs:
             tests/**/*.csproj
 
       - name: Restore dependencies
-        run: dotnet restore .\OpenClaw.MsixPackaging.sln
+        run: dotnet restore .\OpenClaw.MSIXPackaging.sln
 
       - name: Run tests
-        run: dotnet test .\OpenClaw.MsixPackaging.sln --configuration Release --no-restore
+        run: dotnet test .\OpenClaw.MSIXPackaging.sln --configuration Release --no-restore
 
-  publish:
-    name: Publish ${{ matrix.runtime }}
+  validate-native-aot:
+    name: Validate NativeAOT ${{ matrix.runtime }}
     needs: test
     runs-on: windows-latest
     strategy:
@@ -82,10 +82,10 @@ jobs:
         shell: pwsh
         run: |
           $env:Path = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer;$env:Path"
-          dotnet restore .\src\OpenClaw.MsixHost\OpenClaw.MsixHost.csproj `
+          dotnet restore .\src\OpenClaw.MSIXHost\OpenClaw.MSIXHost.csproj `
             --runtime '${{ matrix.runtime }}' `
             -p:PublishAot=true
-          dotnet publish .\src\OpenClaw.MsixHost\OpenClaw.MsixHost.csproj `
+          dotnet publish .\src\OpenClaw.MSIXHost\OpenClaw.MSIXHost.csproj `
             --configuration Release `
             --runtime '${{ matrix.runtime }}' `
             --self-contained true `
@@ -99,31 +99,3 @@ jobs:
               (($files.Name | Sort-Object) -join ', ')
             )
           }
-
-      - name: Create host archive
-        shell: pwsh
-        run: |
-          $archiveName = 'openclaw-poc-${{ matrix.runtime }}.zip'
-          $archivePath = Join-Path '${{ runner.temp }}' $archiveName
-          Compress-Archive `
-            -Path '${{ runner.temp }}\host\*' `
-            -DestinationPath $archivePath
-          $hash = (Get-FileHash $archivePath -Algorithm SHA256).Hash.ToLowerInvariant()
-          $metadataPath = Join-Path '${{ runner.temp }}' 'host-metadata.json'
-          [ordered]@{
-            repository = 'https://github.com/${{ github.repository }}'
-            resolvedCommit = '${{ github.sha }}'
-            architecture = '${{ matrix.runtime }}'
-            archive = $archiveName
-            sha256 = $hash
-          } | ConvertTo-Json | Set-Content $metadataPath -Encoding utf8
-
-      - name: Upload host
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
-        with:
-          name: openclaw-poc-${{ matrix.runtime }}
-          path: |
-            ${{ runner.temp }}\openclaw-poc-${{ matrix.runtime }}.zip
-            ${{ runner.temp }}\host-metadata.json
-          if-no-files-found: error
-          retention-days: 7

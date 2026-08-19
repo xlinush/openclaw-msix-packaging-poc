@@ -5,7 +5,7 @@ using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Text.Json;
 
-namespace OpenClaw.MsixHost;
+namespace OpenClaw.MSIXHost;
 
 public sealed class PayloadStager(
     string installDirectory,
@@ -107,7 +107,10 @@ public sealed class PayloadStager(
                 {
                     _log(
                         "The installed payload marker matches; skipping full per-file verification.");
-                    return new StagedPayload(_installDirectory, actualHash);
+                    return new StagedPayload(
+                        _installDirectory,
+                        actualHash,
+                        Reused: true);
                 }
 
                 string? inventoryPayloadHash =
@@ -127,7 +130,10 @@ public sealed class PayloadStager(
                         cancellationToken);
                     _log(
                         "Migrated the existing payload inventory to the fast verification marker.");
-                    return new StagedPayload(_installDirectory, actualHash);
+                    return new StagedPayload(
+                        _installDirectory,
+                        actualHash,
+                        Reused: true);
                 }
 
                 _log(
@@ -149,7 +155,10 @@ public sealed class PayloadStager(
                         actualHash,
                         cancellationToken);
                     _log("The existing installed payload is valid and will be reused.");
-                    return new StagedPayload(_installDirectory, actualHash);
+                    return new StagedPayload(
+                        _installDirectory,
+                        actualHash,
+                        Reused: true);
                 }
                 catch (InvalidDataException exception)
                 {
@@ -213,7 +222,10 @@ public sealed class PayloadStager(
                 throw;
             }
 
-            return new StagedPayload(_installDirectory, actualHash);
+            return new StagedPayload(
+                _installDirectory,
+                actualHash,
+                Reused: false);
         }
         finally
         {
@@ -667,4 +679,7 @@ internal sealed record PayloadInventoryEntry(
     long Length,
     string Sha256);
 
-public sealed record StagedPayload(string DirectoryPath, string PayloadSha256);
+public sealed record StagedPayload(
+    string DirectoryPath,
+    string PayloadSha256,
+    bool Reused);

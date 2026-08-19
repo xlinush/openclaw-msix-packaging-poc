@@ -3,7 +3,7 @@ using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Text;
 
-namespace OpenClaw.MsixHost;
+namespace OpenClaw.MSIXHost;
 
 public sealed class HostDiagnosticLog : IDisposable
 {
@@ -27,7 +27,7 @@ public sealed class HostDiagnosticLog : IDisposable
             Encoding.UTF8.GetBytes(path.ToUpperInvariant())));
         _writeMutex = new Mutex(
             initiallyOwned: false,
-            $"Local\\OpenClawMsixPackagingPoc.Log.{mutexSuffix}");
+            $"Local\\OpenClawMSIXPackagingPoc.Log.{mutexSuffix}");
     }
 
     public string Path { get; }
@@ -44,13 +44,13 @@ public sealed class HostDiagnosticLog : IDisposable
 
         string? packageFamilyName = GetPackageFamilyName();
         string logRoot = packageFamilyName is null
-            ? System.IO.Path.Combine(localAppData, "OpenClawMsixPackagingPoc")
+            ? System.IO.Path.Combine(localAppData, "OpenClawMSIXPackagingPoc")
             : System.IO.Path.Combine(
                 localAppData,
                 "Packages",
                 packageFamilyName,
                 "LocalState",
-                "OpenClawMsixPackagingPoc");
+                "OpenClawMSIXPackagingPoc");
         return Create(System.IO.Path.Combine(logRoot, "Logs", "openclaw-poc.log"));
     }
 

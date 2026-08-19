@@ -1,4 +1,4 @@
-namespace OpenClaw.MsixHost.Tests;
+namespace OpenClaw.MSIXHost.Tests;
 
 internal static class TestDirectory
 {

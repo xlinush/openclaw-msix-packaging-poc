@@ -1,7 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
-namespace OpenClaw.MsixHost;
+namespace OpenClaw.MSIXHost;
 
 public sealed record PayloadMetadata(
     [property: JsonPropertyName("repository")] string Repository,

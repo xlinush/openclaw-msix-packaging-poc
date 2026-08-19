@@ -7,11 +7,11 @@ on:
       - Directory.Build.props
       - Directory.Packages.props
       - global.json
-      - OpenClaw.MsixPackaging.sln
+      - OpenClaw.MSIXPackaging.sln
       - src/**
       - tests/**
       - scripts/Build-Payload.ps1
-      - scripts/Build-Msix.ps1
+      - scripts/Build-MSIX.ps1
   workflow_dispatch:
     inputs:
       openclaw_ref:
@@ -27,11 +27,11 @@ on:
       - Directory.Build.props
       - Directory.Packages.props
       - global.json
-      - OpenClaw.MsixPackaging.sln
+      - OpenClaw.MSIXPackaging.sln
       - src/**
       - tests/**
       - scripts/Build-Payload.ps1
-      - scripts/Build-Msix.ps1
+      - scripts/Build-MSIX.ps1
 
 permissions:
   contents: read
@@ -194,7 +194,7 @@ jobs:
       - name: Restore NativeAOT and MSIX dependencies
         shell: pwsh
         run: |
-          dotnet restore .\src\OpenClaw.MsixHost\OpenClaw.MsixHost.csproj `
+          dotnet restore .\src\OpenClaw.MSIXHost\OpenClaw.MSIXHost.csproj `
             --runtime 'win-${{ matrix.architecture }}' `
             -p:PublishAot=true `
             -p:IncludePackagingContent=true `
@@ -203,7 +203,7 @@ jobs:
       - name: Compose and sign development MSIX
         shell: pwsh
         run: |
-          .\scripts\Build-Msix.ps1 `
+          .\scripts\Build-MSIX.ps1 `
             -PayloadDirectory '${{ runner.temp }}\openclaw-payload' `
             -Architecture '${{ matrix.architecture }}' `
             -NodeVersion '${{ env.NODE_VERSION }}' `

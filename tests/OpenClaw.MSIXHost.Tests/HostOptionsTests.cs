@@ -1,4 +1,4 @@
-namespace OpenClaw.MsixHost.Tests;
+namespace OpenClaw.MSIXHost.Tests;
 
 public sealed class HostOptionsTests
 {
