@@ -127,6 +127,38 @@ trusted locally before installing these evaluation packages.
 
 ## Build
 
+### Selecting the OpenClaw revision
+
+The `Build OpenClaw payloads and MSIX` workflow always resolves an explicit
+OpenClaw ref before building. Automatic pull-request and `main` push runs use
+the pinned commit in `.github\workflows\build-payloads.yml`:
+
+```text
+d2825c70a5168c19e98ec75babf27476a3c15669
+```
+
+Consequently, pushing packaging changes rebuilds the host and MSIX but does not
+silently move the bundled OpenClaw source to the latest upstream commit. To
+change the revision used by automatic runs, update both the
+`workflow_dispatch.inputs.openclaw_ref.default` value and the non-manual
+fallback in `env.OPENCLAW_REF`. Changing only the workflow-dispatch default
+does not change pull-request or push builds.
+
+For a one-time override, open **Actions**, select
+**Build OpenClaw payloads and MSIX**, choose **Run workflow**, and enter an
+OpenClaw tag, branch, or commit in `openclaw_ref`. A full 40-character commit
+SHA is recommended for reproducibility. The equivalent GitHub CLI command is:
+
+```powershell
+gh workflow run build-payloads.yml -f openclaw_ref=<openclaw-commit-sha>
+```
+
+The workflow checks out `openclaw/openclaw` at the requested ref and records
+both that requested value and the resolved `git rev-parse HEAD` SHA in the
+packaged `payload-metadata.json`. This is the authoritative provenance for the
+bundled OpenClaw code. The separate `msix-metadata.json` records the packaging
+repository commit used to compose the MSIX.
+
 ```powershell
 dotnet restore .\OpenClaw.MSIXPackaging.sln
 dotnet test .\OpenClaw.MSIXPackaging.sln --configuration Release --no-restore
