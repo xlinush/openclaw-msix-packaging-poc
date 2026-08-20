@@ -7,6 +7,7 @@ public sealed record HostOptions(
     string MetadataPath,
     string NodePath,
     string InstallDirectory,
+    string StateDirectory,
     IReadOnlyList<string> OpenClawArguments,
     bool VerifyInstalledPayload,
     bool ShowHelp)
@@ -26,10 +27,13 @@ public sealed record HostOptions(
         string metadataPath = Path.Combine(payloadDirectory, "payload-metadata.json");
         string packagedNodePath = Path.Combine(AppContext.BaseDirectory, "runtime", "node.exe");
         string nodePath = File.Exists(packagedNodePath) ? packagedNodePath : "node";
+        string userProfile = Environment.GetFolderPath(
+            Environment.SpecialFolder.UserProfile);
         string installDirectory = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+            userProfile,
             ".openclaw-msix",
             "app");
+        string stateDirectory = Path.Combine(userProfile, ".openclaw");
         var openClawArguments = new List<string>();
         bool verifyInstalledPayload = false;
         bool showHelp = false;
@@ -78,6 +82,7 @@ public sealed record HostOptions(
             metadataPath,
             nodePath,
             installDirectory,
+            stateDirectory,
             openClawArguments,
             verifyInstalledPayload,
             showHelp);

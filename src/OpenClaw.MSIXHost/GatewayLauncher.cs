@@ -24,16 +24,53 @@ public static class GatewayLauncher
         using Process process = Process.Start(startInfo) ??
             throw new InvalidOperationException("Unable to start the OpenClaw process.");
         log?.Invoke($"OpenClaw child process started with PID {process.Id}.");
+        GatewayProcessRegistration? registration = null;
+        if (IsGatewayRun(openClawArguments))
+        {
+            try
+            {
+                registration = GatewayProcessRegistration.Create(
+                    process,
+                    payloadDirectory);
+            }
+            catch (Exception exception) when (
+                exception is IOException or
+                UnauthorizedAccessException or
+                InvalidOperationException or
+                System.ComponentModel.Win32Exception)
+            {
+                log?.Invoke(
+                    $"Unable to record the gateway process for reset: {exception.Message}");
+            }
+        }
+
         Task stderrForwarding = startInfo.RedirectStandardError
             ? ForwardStandardErrorAsync(
                 process.StandardError,
                 Console.Error,
                 cancellationToken)
             : Task.CompletedTask;
-        await process.WaitForExitAsync(cancellationToken);
-        await stderrForwarding;
-        log?.Invoke($"OpenClaw child process exited with code {process.ExitCode}.");
-        return process.ExitCode;
+        try
+        {
+            await process.WaitForExitAsync(cancellationToken);
+            await stderrForwarding;
+            log?.Invoke($"OpenClaw child process exited with code {process.ExitCode}.");
+            return process.ExitCode;
+        }
+        catch (OperationCanceledException)
+        {
+            if (!process.HasExited)
+            {
+                process.Kill(entireProcessTree: true);
+                await process.WaitForExitAsync(CancellationToken.None);
+            }
+
+            throw;
+        }
+        finally
+        {
+            registration?.Dispose();
+        }
     }
 
     public static ProcessStartInfo CreateStartInfo(
@@ -124,6 +161,18 @@ public static class GatewayLauncher
             ? arguments
             : [.. arguments, "--skip-daemon"];
     }
+
+    private static bool IsGatewayRun(IReadOnlyList<string> arguments) =>
+        arguments.Count == 0 ||
+        (arguments.Count >= 2 &&
+            string.Equals(
+                arguments[0],
+                "gateway",
+                StringComparison.OrdinalIgnoreCase) &&
+            string.Equals(
+                arguments[1],
+                "run",
+                StringComparison.OrdinalIgnoreCase));
 
     public static async Task ForwardStandardErrorAsync(
         TextReader reader,

@@ -75,6 +75,18 @@ steps, and keeps an interactive terminal open until Enter is pressed:
 dotnet run --project .\src\OpenClaw.MSIXHost
 ```
 
+When an earlier preparation is detected, fast verification is the recommended
+default. The same menu can fully verify and repair the prepared payload, reset
+only `%USERPROFILE%\.openclaw-msix\app`, or reset both the prepared payload and
+OpenClaw's `%USERPROFILE%\.openclaw` configuration and user data. A full reset
+requires typing `RESET`. Reset first asks OpenClaw to stop its gateway and only
+terminates a recorded packaged gateway process as a fallback; it never kills
+unrelated `node.exe` processes. Resetting prepared gateway files leaves the
+MSIX installed, so launching it again prepares a clean copy.
+
+If the existing installation is already configured and working, close the
+bootstrapper and run `openclaw-poc gateway run`.
+
 For development, point it at a payload produced by the existing workflow:
 
 ```powershell

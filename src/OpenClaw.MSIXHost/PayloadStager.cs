@@ -16,7 +16,6 @@ public sealed class PayloadStager(
     private const long MaximumExtractedBytes = 8L * 1024 * 1024 * 1024;
     private const string InventoryFileName = ".payload-inventory.json";
     private const string VerificationMarkerFileName = ".payload-verified-sha256";
-    private static readonly TimeSpan InstallLockTimeout = TimeSpan.FromSeconds(30);
     private static readonly StringComparer PathComparer = StringComparer.OrdinalIgnoreCase;
     private readonly string _installDirectory = Path.GetFullPath(installDirectory);
     private readonly Action<string> _log = log ?? (_ => { });
@@ -77,12 +76,10 @@ public sealed class PayloadStager(
         string installName = Path.GetFileName(_installDirectory);
         string temporaryDirectory = Path.Combine(installRoot, $".{installName}.staging");
         string backupDirectory = Path.Combine(installRoot, $".{installName}.previous");
-        string lockPath = Path.Combine(installRoot, $".{installName}.install.lock");
-
         _log("Waiting for the exclusive installation lock.");
         var lockStopwatch = Stopwatch.StartNew();
-        await using FileStream installLock = await AcquireInstallLockAsync(
-            lockPath,
+        await using FileStream installLock = await InstallDirectoryLock.AcquireAsync(
+            _installDirectory,
             cancellationToken);
         _log(
             $"Acquired the installation lock after {lockStopwatch.Elapsed.TotalSeconds:F1} seconds.");
@@ -235,37 +232,6 @@ public sealed class PayloadStager(
                 DeleteDirectory(backupDirectory);
             }
         }
-    }
-
-    private static async Task<FileStream> AcquireInstallLockAsync(
-        string lockPath,
-        CancellationToken cancellationToken)
-    {
-        var stopwatch = Stopwatch.StartNew();
-        IOException? lastException = null;
-        while (stopwatch.Elapsed < InstallLockTimeout)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            try
-            {
-                return new FileStream(
-                    lockPath,
-                    FileMode.OpenOrCreate,
-                    FileAccess.ReadWrite,
-                    FileShare.None,
-                    bufferSize: 1,
-                    FileOptions.Asynchronous);
-            }
-            catch (IOException exception)
-            {
-                lastException = exception;
-                await Task.Delay(TimeSpan.FromMilliseconds(100), cancellationToken);
-            }
-        }
-
-        throw new TimeoutException(
-            "Timed out waiting for another OpenClaw installation operation.",
-            lastException);
     }
 
     private static void RecoverInterruptedPromotion(

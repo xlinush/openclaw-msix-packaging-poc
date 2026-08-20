@@ -5,16 +5,17 @@ public sealed class BootstrapConsoleTests : IDisposable
     private readonly string _testDirectory = TestDirectory.Create();
 
     [Fact]
-    public void PromptForFullVerificationSkipsPromptForFirstLaunch()
+    public void PromptForActionSkipsPromptForFirstLaunch()
     {
         var output = new StringWriter();
 
-        bool verify = BootstrapConsole.PromptForFullVerification(
+        BootstrapAction action = BootstrapConsole.PromptForAction(
             Path.Combine(_testDirectory, "missing"),
+            Path.Combine(_testDirectory, "missing-state"),
             new StringReader("r"),
             output);
 
-        Assert.False(verify);
+        Assert.Equal(BootstrapAction.PrepareFast, action);
         Assert.Empty(output.ToString());
     }
 
@@ -22,33 +23,113 @@ public sealed class BootstrapConsoleTests : IDisposable
     [InlineData("")]
     [InlineData("c")]
     [InlineData("C")]
-    public void PromptForFullVerificationDefaultsToFastVerification(string response)
+    public void PromptForActionDefaultsToFastVerification(string response)
     {
         Directory.CreateDirectory(Path.Combine(_testDirectory, "app"));
 
-        bool verify = BootstrapConsole.PromptForFullVerification(
+        BootstrapAction action = BootstrapConsole.PromptForAction(
             Path.Combine(_testDirectory, "app"),
+            Path.Combine(_testDirectory, "state"),
             new StringReader(response),
             new StringWriter());
 
-        Assert.False(verify);
+        Assert.Equal(BootstrapAction.PrepareFast, action);
     }
 
     [Fact]
-    public void PromptForFullVerificationAllowsRetry()
+    public void PromptForActionAllowsFullVerification()
     {
         string installDirectory = Path.Combine(_testDirectory, "app");
         Directory.CreateDirectory(installDirectory);
         var output = new StringWriter();
 
-        bool verify = BootstrapConsole.PromptForFullVerification(
+        BootstrapAction action = BootstrapConsole.PromptForAction(
             installDirectory,
+            Path.Combine(_testDirectory, "state"),
             new StringReader($"invalid{Environment.NewLine}r"),
             output);
 
-        Assert.True(verify);
+        Assert.Equal(BootstrapAction.PrepareFull, action);
         Assert.Contains(
-            "Enter C to continue or R to retry",
+            "Enter C, R, G, or A",
+            output.ToString(),
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void PromptForActionMarksFastVerificationRecommended()
+    {
+        string installDirectory = Path.Combine(_testDirectory, "app");
+        Directory.CreateDirectory(installDirectory);
+        var output = new StringWriter();
+
+        BootstrapConsole.PromptForAction(
+            installDirectory,
+            Path.Combine(_testDirectory, "state"),
+            new StringReader("c"),
+            output);
+
+        Assert.Contains(
+            "[C] Continue with fast verification [recommended]",
+            output.ToString(),
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "openclaw-poc gateway run",
+            output.ToString(),
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void PromptForActionConfirmsGatewayReset()
+    {
+        string installDirectory = Path.Combine(_testDirectory, "app");
+        Directory.CreateDirectory(installDirectory);
+
+        BootstrapAction action = BootstrapConsole.PromptForAction(
+            installDirectory,
+            Path.Combine(_testDirectory, "state"),
+            new StringReader($"g{Environment.NewLine}yes"),
+            new StringWriter());
+
+        Assert.Equal(BootstrapAction.ResetGateway, action);
+    }
+
+    [Fact]
+    public void PromptForActionDetectsGatewayRootWithoutPreparedApp()
+    {
+        string installDirectory = Path.Combine(
+            _testDirectory,
+            ".openclaw-msix",
+            "app");
+        Directory.CreateDirectory(Path.GetDirectoryName(installDirectory)!);
+
+        BootstrapAction action = BootstrapConsole.PromptForAction(
+            installDirectory,
+            Path.Combine(_testDirectory, "state"),
+            new StringReader($"g{Environment.NewLine}y"),
+            new StringWriter());
+
+        Assert.Equal(BootstrapAction.ResetGateway, action);
+    }
+
+    [Fact]
+    public void PromptForActionRequiresResetPhraseForFullReset()
+    {
+        string installDirectory = Path.Combine(_testDirectory, "app");
+        Directory.CreateDirectory(installDirectory);
+        var output = new StringWriter();
+
+        BootstrapAction action = BootstrapConsole.PromptForAction(
+            installDirectory,
+            Path.Combine(_testDirectory, "state"),
+            new StringReader(
+                $"a{Environment.NewLine}no{Environment.NewLine}" +
+                $"a{Environment.NewLine}RESET"),
+            output);
+
+        Assert.Equal(BootstrapAction.ResetAll, action);
+        Assert.Contains(
+            "Full reset canceled.",
             output.ToString(),
             StringComparison.Ordinal);
     }
@@ -78,6 +159,10 @@ public sealed class BootstrapConsoleTests : IDisposable
             StringComparison.Ordinal);
         Assert.Contains(
             "did not start the gateway automatically",
+            summary,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "close this window",
             summary,
             StringComparison.Ordinal);
     }
